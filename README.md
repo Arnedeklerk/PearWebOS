@@ -13,11 +13,19 @@ PearWebOS changes nothing on the TV's system partition. It mounts three files ov
 
 ## What you need
 
-- An LG TV on **webOS 6** (2021 models), **rooted** with [Homebrew Channel](https://www.webosbrew.org/), and **SSH turned on** in Homebrew Channel's settings. Pear has been used on a 65NANO886PB (webOS 6.4). Other webOS 6 models should work. On a firmware whose Home differs, setup stops before installing anything.
+- An LG TV on **webOS 6** (2021 models), **rooted** with [Homebrew Channel](https://www.webosbrew.org/), and **SSH turned on** in Homebrew Channel's settings. See [Tested on](#tested-on). Other webOS 6 models should work. On a firmware whose Home differs, setup stops before installing anything.
 - A Mac or Linux computer on the same network, with Python 3 and two libraries:
   ```bash
   python3 -m pip install --user pillow numpy
   ```
+
+## Tested on
+
+| TV | webOS | Firmware | Works |
+|---|---|---|---|
+| LG 65NANO886PB (2021 NanoCell) | 6.4.0 | 03.41.05 | Yes |
+
+Tried it on another TV? Please [open an issue](https://github.com/Arnedeklerk/PearWebOS/issues/new) with the model, webOS version and firmware (Settings → General → About This TV), and whether it worked, so this table can grow.
 
 ## Install
 
