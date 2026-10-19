@@ -1,0 +1,163 @@
+#!/bin/sh
+# pearwebos: the on-TV side of PearWebOS.
+#
+# Files under $DIR/files mirror LG Home's qml/ tree and are bind-mounted over
+# the stock ones; nothing on the read-only system changes, and `off` (or a
+# reboot with the hook removed) is stock LG Home again.
+#
+# LG Home is restored from snapshots with its QML already loaded, so mounting
+# files changes nothing until Home cold starts:
+#  - a relaunch restores the CRIU snapshot in $CKPT, which the app manager
+#    retakes after a cold start with whatever is mounted then;
+#  - a full boot restores LG's quick-start image, which holds stock Home.
+# $STAMP records the Home process started with Pear in. If the Home running
+# at boot is not that one, it came from LG's image and is rebuilt.
+#
+#   pearwebos on      mount, cold-start Home, check it came up
+#   pearwebos off     unmount, cold-start stock Home, and stay off at boot
+#   pearwebos boot    what the init.d hook runs
+#   pearwebos status
+#   pearwebos settings  the power-on settings chosen in setup
+#   pearwebos unmount   before replacing the files (the installer)
+
+DIR=/var/lib/pearwebos
+APP=/usr/palm/applications/com.webos.app.home/qml
+CKPT=/mnt/lg/cmn_data/checkpoint/com.webos.app.home
+STAMP=$DIR/checkpoint.stamp
+OFF=$DIR/disabled
+LOG=$DIR/pearwebos.log
+LS=$DIR/luna-send-n
+
+# choices from `pear setup`
+GUARD=1 BOOT_TO_HOME=1 QUICK_START=1 NO_UPDATE_PROMPT=1
+[ -f "$DIR/pear.conf" ] && . "$DIR/pear.conf"
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOG" >&2
+    tail -n 300 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+}
+
+# relative paths of every Pear file
+pear_files() { (cd "$DIR/files" && find . -type f | sed 's|^\./||'); }
+
+mounted() { grep -q " $1 " /proc/mounts; }
+
+mount_all() {
+    for f in $(pear_files); do
+        t=$APP/$f
+        [ -f "$t" ] || { log "no stock file for $f; skipped"; continue; }
+        mounted "$t" || mount --bind "$DIR/files/$f" "$t" || log "mount failed: $f"
+    done
+}
+
+umount_all() {
+    for f in $(pear_files); do
+        t=$APP/$f
+        while mounted "$t"; do umount "$t" || break; done
+    done
+}
+
+home_pid() { ps -eo pid,args | grep '[/]usr/bin/com.webos.app.home' | awk '{print $1}' | head -1; }
+
+# which Home this is: its pid (kept across CRIU restores) and the snapshot
+pear_id() { echo "$(home_pid) $([ -d "$CKPT" ] && stat -c '%Y-%i' "$CKPT" 2>/dev/null)"; }
+
+open_home() { $LS -n 1 luna://com.webos.applicationManager/launch '{"id":"com.webos.app.home"}' >/dev/null; }
+
+guard() { [ "$GUARD" = 1 ] && "$DIR/homeguard" "$1"; }
+
+# Throw away the snapshot and start Home from its files; wait for the app
+# manager to take a new one. Non-zero if Home does not stay up.
+cold_start() {
+    rm -rf "$CKPT"
+    pid=$(home_pid)
+    [ -n "$pid" ] && kill "$pid"
+    sleep 2
+    open_home
+    i=0
+    while [ $i -lt 30 ]; do
+        sleep 1; i=$((i + 1))
+        [ -n "$(home_pid)" ] && [ -d "$CKPT" ] && break
+    done
+    sleep 8
+    [ -n "$(home_pid)" ]
+}
+
+go_stock() {
+    umount_all
+    cold_start
+    rm -f "$STAMP"
+}
+
+cmd_on() {
+    rm -f "$OFF"
+    # remount: a replaced file is a new inode, and a mount keeps the old one
+    umount_all
+    mount_all
+    if cold_start; then
+        pear_id > "$STAMP"
+        guard start
+        log "on: Pear Home up (snapshot $(cat "$STAMP"))"
+    else
+        log "on: Home did not stay up with Pear; back to stock"
+        go_stock
+        touch "$OFF"
+        return 1
+    fi
+}
+
+cmd_off() {
+    touch "$OFF"
+    "$DIR/homeguard" stop
+    go_stock
+    log "off: stock Home"
+}
+
+# the settings a TV needs to power on straight into Home
+boot_settings() {
+    [ "$BOOT_TO_HOME" = 1 ] &&
+        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv","welcomeFeature":"off","noSignalScreenSaver":"off","homeAutoLaunch":"on","homeAutoLaunchMode":"full"}}' >/dev/null
+    # Quick Start+: power-off sleeps, so power-on resumes Pear instead of
+    # booting LG's stock Home
+    [ "$QUICK_START" = 1 ] &&
+        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"option","settings":{"quickStartMode":"on"}}' >/dev/null
+    # no "new software, update now?" at power-on: an update can remove root
+    [ "$NO_UPDATE_PROMPT" = 1 ] &&
+        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"support","settings":{"automaticUpdate":"off","softwareUpdateEnable":"false"}}' >/dev/null
+    return 0
+}
+
+cmd_boot() {
+    [ -f "$OFF" ] && { log "boot: off"; return 0; }
+    mount_all
+    # Pear first, so the stock Home is on screen as briefly as possible
+    if [ -f "$STAMP" ] && [ "$(pear_id)" = "$(cat "$STAMP")" ]; then
+        log "boot: Home already carries Pear"
+        guard start
+    else
+        log "boot: Home is stock ($(pear_id)); rebuilding with Pear"
+        cmd_on
+        # Home is an overlay, so whatever LG opened is still beneath it
+        [ "$BOOT_TO_HOME" = 1 ] && open_home
+    fi
+    boot_settings
+}
+
+cmd_status() {
+    [ -f "$OFF" ] && echo "state: off" || echo "state: on"
+    echo "home pid: $(home_pid)"
+    echo "running: $(pear_id)  pear: $(cat "$STAMP" 2>/dev/null)"
+    for f in $(pear_files); do
+        mounted "$APP/$f" && echo "  mounted  $f" || echo "  -        $f"
+    done
+}
+
+case "${1:-status}" in
+    on) cmd_on ;;
+    off) cmd_off ;;
+    boot) cmd_boot ;;
+    status) cmd_status ;;
+    settings) boot_settings ;;
+    unmount) umount_all ;;
+    *) echo "usage: pearwebos on|off|boot|status|settings|unmount" >&2; exit 2 ;;
+esac

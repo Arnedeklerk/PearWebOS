@@ -1,0 +1,34 @@
+#!/bin/sh
+# luna-send-n: luna-send with a working -n.
+#
+# On some webOS firmware (6.4 on a 2021 NanoCell, for one) `luna-send -n N`
+# exits before printing any reply, while `-i` mode answers. This takes the same arguments as
+# luna-send, runs it in -i -l mode and stops after N replies (default 1)
+# or 10 seconds, printing the replies without their numbering.
+
+n=1
+cnt=$#
+i=0
+while [ "$i" -lt "$cnt" ]; do
+    a=$1; shift; i=$((i + 1))
+    case "$a" in
+        -n) n=$1; shift; i=$((i + 1)); continue ;;
+        -w) shift; i=$((i + 1)); continue ;;
+    esac
+    set -- "$@" "$a"
+done
+
+out=/tmp/luna-send-n.$$
+/usr/bin/luna-send -i -l "$@" > "$out" 2>/dev/null &
+pid=$!
+w=0
+while [ "$w" -lt 100 ]; do
+    [ "$(grep -c '^ *[0-9][0-9]*: ' "$out" 2>/dev/null)" -ge "$n" ] && break
+    kill -0 "$pid" 2>/dev/null || break
+    usleep 100000
+    w=$((w + 1))
+done
+kill "$pid" 2>/dev/null
+wait "$pid" 2>/dev/null
+sed 's/^ *[0-9][0-9]*: //' "$out"
+rm -f "$out"

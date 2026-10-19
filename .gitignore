@@ -1,0 +1,7 @@
+# your setup and the copies of LG Home pulled from your TV
+.pear.json
+.cache/
+__pycache__/
+# your photos stay yours
+photos/*
+!photos/README.md

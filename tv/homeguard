@@ -1,0 +1,68 @@
+#!/bin/sh
+# homeguard: keep Home up instead of an untuned Live TV (PearWebOS).
+#
+# Leaving an app, the screensaver or a power-on all fall back to Live TV,
+# which on a TV with no channels tuned says "Not Programmed". This follows the
+# foreground and, when nothing but Live TV (or nothing at all) is in front,
+# opens Home. Touch $DIR/allow-livetv to stand it down,
+# e.g. once channels are tuned.
+#
+# Started by `pearwebos boot` / `pearwebos on`; one instance, pid in $PID.
+
+DIR=/var/lib/pearwebos
+PID=$DIR/homeguard.pid
+LOG=$DIR/homeguard.log
+LS=$DIR/luna-send-n
+FG='{"subscribe":true,"extraInfo":true}'
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"
+    tail -n 200 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+}
+
+# app ids in front, from one getForegroundAppInfo reply
+front_ids() { grep -o '"appId":"[^"]*"' | sed 's/"appId":"//; s/"$//' | tr '\n' ' '; }
+
+# true when the screen would show only Live TV, or nothing
+stranded() {
+    case " $1 " in
+        *" com.webos.app.home "*) return 1 ;;
+    esac
+    ids=$(echo "$1" | sed 's/com\.webos\.app\.livetv//g' | tr -d ' ')
+    [ -z "$ids" ]
+}
+
+check() {
+    [ -f "$DIR/allow-livetv" ] && return
+    # a beat for app switches to settle (leaving one app for another passes through "")
+    usleep 300000
+    now=$($LS -n 1 luna://com.webos.applicationManager/getForegroundAppInfo '{"extraInfo":true}' | front_ids)
+    stranded "$now" || return
+    log "only [${now% }] in front; opening Home"
+    $LS -n 1 luna://com.webos.applicationManager/launch '{"id":"com.webos.app.home"}' >/dev/null
+}
+
+case "${1:-run}" in
+    stop)
+        [ -f "$PID" ] && kill "$(cat "$PID")" 2>/dev/null
+        rm -f "$PID"
+        kill $(ps -eo pid,args | grep '[g]etForegroundAppInfo.*subscribe' | awk '{print $1}') 2>/dev/null
+        exit 0 ;;
+    start)
+        "$0" stop
+        setsid "$0" run </dev/null >/dev/null 2>&1 &
+        exit 0 ;;
+esac
+
+echo $$ > "$PID"
+log "started"
+# the subscription ends if the bus restarts; follow it again
+while :; do
+    /usr/bin/luna-send -i luna://com.webos.applicationManager/getForegroundAppInfo "$FG" 2>/dev/null |
+    while read -r line; do
+        ids=$(echo "$line" | front_ids)
+        log "front: [${ids% }]"
+        stranded "$ids" && check &
+    done
+    sleep 5
+done

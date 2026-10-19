@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""pear: install and manage PearWebOS on a rooted LG webOS TV.
+
+    ./pear setup       find the TV, ask a few questions, install
+    ./pear sync        rebuild and push after changing photos or settings
+    ./pear status      what is mounted and running on the TV
+    ./pear on | off    Pear Home, or LG's own Home
+    ./pear shot        save a screenshot of the TV to docs/screenshot.jpg
+    ./pear uninstall   remove PearWebOS from the TV
+"""
+import io
+import json
+import os
+import socket
+import subprocess
+import sys
+import tarfile
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, "installer"))
+
+CONF = os.path.join(HERE, ".pear.json")
+CACHE = os.path.join(HERE, ".cache")
+TV_DIR = "/var/lib/pearwebos"
+HOOK = "/var/lib/webosbrew/init.d/60-pearwebos"
+DEFAULTS = {"tv": "", "name": "", "clock": "24", "guard": True,
+            "boot_to_home": True, "quick_start": True, "no_update_prompt": True}
+
+
+# ---- talking to the TV ----
+
+def ssh(conf, cmd, check=True, capture=True, stdin=None):
+    r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
+                        f"root@{conf['tv']}", cmd],
+                       input=stdin, capture_output=capture, check=False)
+    if check and r.returncode != 0:
+        err = (r.stderr or b"").decode(errors="replace").strip()
+        sys.exit(f"On the TV, `{cmd.splitlines()[0][:60]}` failed: {err or r.returncode}")
+    return (r.stdout or b"").decode(errors="replace")
+
+
+def pull(conf, remote, local):
+    os.makedirs(os.path.dirname(local), exist_ok=True)
+    r = subprocess.run(["scp", "-q", "-o", "BatchMode=yes", f"root@{conf['tv']}:{remote}", local])
+    if r.returncode != 0:
+        sys.exit(f"Could not copy {remote} from the TV.")
+
+
+def find_tvs():
+    """webOS TVs on this machine's /24: they answer on port 3000."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("192.0.2.1", 80))
+        me = s.getsockname()[0]
+        s.close()
+    except OSError:
+        return []
+    base = me.rsplit(".", 1)[0]
+
+    def probe(i):
+        ip = f"{base}.{i}"
+        if ip == me:
+            return None
+        try:
+            with socket.create_connection((ip, 3000), timeout=0.6):
+                pass
+        except OSError:
+            return None
+        try:
+            with socket.create_connection((ip, 22), timeout=0.6):
+                return (ip, True)
+        except OSError:
+            return (ip, False)
+
+    with ThreadPoolExecutor(64) as ex:
+        return [r for r in ex.map(probe, range(1, 255)) if r]
+
+
+# ---- config ----
+
+def load():
+    conf = dict(DEFAULTS)
+    if os.path.exists(CONF):
+        with open(CONF) as f:
+            conf.update(json.load(f))
+    return conf
+
+
+def save(conf):
+    with open(CONF, "w") as f:
+        json.dump(conf, f, indent=2)
+
+
+def ask(prompt, default):
+    shown = {True: "Y/n", False: "y/N"}.get(default, default)
+    a = input(f"  {prompt} [{shown}] ").strip()
+    if isinstance(default, bool):
+        return default if not a else a.lower().startswith("y")
+    return a or default
+
+
+# ---- building and installing ----
+
+def build_and_push(conf):
+    try:
+        import numpy  # noqa: F401
+        from PIL import Image  # noqa: F401
+    except ImportError:
+        sys.exit("PearWebOS needs Pillow and numpy on this computer:\n"
+                 "  python3 -m pip install --user pillow numpy")
+    import patch_home
+    import wallpapers
+
+    print("Copying LG Home's files from the TV (they stay on your machine)...")
+    stock = os.path.join(CACHE, "stock")
+    for rel in patch_home.NEEDED:
+        pull(conf, f"{patch_home.APP}/{rel}", os.path.join(stock, rel))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        print("Building wallpapers from photos/ ...")
+        accents = wallpapers.build(os.path.join(HERE, "photos"), os.path.join(tmp, "wallpapers"))
+        print("Patching LG Home...")
+        patch_home.build(stock, os.path.join(tmp, "files"), os.path.join(HERE, "qml", "PearHome.qml"), {
+            "NAME": json.dumps(conf["name"])[1:-1],
+            "CLOCK": "h:mm" if conf["clock"] == "12" else "HH:mm",
+            "WALLPAPERS": str(len(accents) - 1),
+            "ACCENTS": json.dumps(accents),
+        })
+        with open(os.path.join(tmp, "pear.conf"), "w") as f:
+            for key in ("guard", "boot_to_home", "quick_start", "no_update_prompt"):
+                f.write(f"{key.upper()}={1 if conf[key] else 0}\n")
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            for sub in ("files", "wallpapers", "pear.conf"):
+                tar.add(os.path.join(tmp, sub), arcname=sub)
+            for script in ("pearwebos", "homeguard", "luna-send-n", "tvkey.js"):
+                info = tar.gettarinfo(os.path.join(HERE, "tv", script), arcname=script)
+                info.mode = 0o755
+                with open(os.path.join(HERE, "tv", script), "rb") as f:
+                    tar.addfile(info, f)
+
+    print("Installing on the TV...")
+    ssh(conf, f"mkdir -p {TV_DIR} && cd {TV_DIR} && {{ [ -x ./pearwebos ] && ./pearwebos unmount; true; }} && "
+              "rm -rf files wallpapers && tar xf -", stdin=buf.getvalue())
+    ssh(conf, f"printf '#!/bin/sh\\n# PearWebOS\\n{TV_DIR}/pearwebos boot\\n' > {HOOK} && chmod 755 {HOOK}")
+    print("Starting Pear Home (about 15 seconds)...")
+    out = ssh(conf, f"{TV_DIR}/pearwebos on 2>&1 | tail -1; {TV_DIR}/pearwebos settings; true")
+    print("  " + out.strip())
+
+
+def preflight(conf):
+    if not conf["tv"]:
+        sys.exit("No TV yet: run ./pear setup")
+    if subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", f"root@{conf['tv']}", "true"],
+                      capture_output=True).returncode != 0:
+        sys.exit(f"Can't log into root@{conf['tv']} with an SSH key.\n"
+                 "  1. In Homebrew Channel, open Settings and turn on SSH Server.\n"
+                 f"  2. Run: ssh-copy-id root@{conf['tv']}   (the default password is alpine)\n"
+                 "  Then run ./pear setup again.")
+    if ssh(conf, "[ -d /var/lib/webosbrew/init.d ] && echo ok", check=False).strip() != "ok":
+        sys.exit("This TV has no Homebrew Channel startup hooks (/var/lib/webosbrew/init.d). Is it rooted?")
+
+
+# ---- commands ----
+
+def cmd_setup():
+    conf = load()
+    print("PearWebOS setup\n")
+    if not conf["tv"]:
+        print("Looking for LG TVs on your network...")
+        tvs = find_tvs()
+        for ip, has_ssh in tvs:
+            print(f"  {ip}{'  (SSH open)' if has_ssh else ''}")
+        guess = next((ip for ip, s in tvs if s), tvs[0][0] if tvs else "")
+        conf["tv"] = ask("TV address", guess)
+    preflight(conf)
+    release = ssh(conf, "grep -o '\"webos_release\": *\"[^\"]*\"' /var/run/nyx/os_info.json | cut -d'\"' -f4", check=False).strip()
+    print(f"  Connected. webOS {release or '?'}" + ("" if release.startswith("6.") else
+          "  (Pear is tested on webOS 6; on other versions it may refuse, safely)"))
+
+    print()
+    conf["name"] = ask('Name for the greeting ("Good evening, ___"; blank for none)', conf["name"])
+    conf["clock"] = ask("Clock: 24 or 12 hour", conf["clock"])
+    conf["guard"] = not ask("Do you watch Live TV through an aerial or cable?", not conf["guard"])
+    conf["boot_to_home"] = ask("Power on straight to Home?", conf["boot_to_home"])
+    conf["quick_start"] = ask("Turn on Quick Start+ (power-on resumes Pear instantly)?", conf["quick_start"])
+    conf["no_update_prompt"] = ask('Hide LG\'s "new software, update now?" prompt (an update can remove root)?', conf["no_update_prompt"])
+    save(conf)
+    print()
+    build_and_push(conf)
+    print("\nDone. Put photos in photos/ and run ./pear sync to use them as backgrounds.")
+
+
+def cmd_sync():
+    conf = load()
+    preflight(conf)
+    build_and_push(conf)
+
+
+def cmd_simple(arg):
+    conf = load()
+    preflight(conf)
+    print(ssh(conf, f"{TV_DIR}/pearwebos {arg} 2>&1", check=False).rstrip())
+
+
+def cmd_shot():
+    conf = load()
+    preflight(conf)
+    ssh(conf, f"{TV_DIR}/luna-send-n -n 1 luna://com.webos.service.capture/executeOneShot "
+              "'{\"path\":\"/tmp/pear-shot.jpg\",\"method\":\"DISPLAY\",\"width\":1920,\"height\":1080,\"format\":\"JPEG\"}' >/dev/null")
+    dest = os.path.join(HERE, "docs", "screenshot.jpg")
+    pull(conf, "/tmp/pear-shot.jpg", dest)
+    print(f"Saved {os.path.relpath(dest)}")
+
+
+def cmd_uninstall():
+    conf = load()
+    preflight(conf)
+    print(ssh(conf, f"[ -x {TV_DIR}/pearwebos ] && {TV_DIR}/pearwebos off 2>&1 | tail -1; "
+                    f"rm -f {HOOK}; rm -rf {TV_DIR}; echo 'PearWebOS removed; LG Home is back.'", check=False).strip())
+    print("Settings Pear changed (power-on screen, Quick Start+, update prompt) are left as they are;\n"
+          "change them back in the TV's own Settings if you want.")
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "help"
+    try:
+        {"setup": cmd_setup, "sync": cmd_sync, "shot": cmd_shot, "uninstall": cmd_uninstall,
+         "status": lambda: cmd_simple("status"), "on": lambda: cmd_simple("on"),
+         "off": lambda: cmd_simple("off")}.get(cmd, lambda: print(__doc__))()
+    except KeyboardInterrupt:
+        print()
