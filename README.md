@@ -32,7 +32,7 @@ ssh-copy-id root@<your-tv-ip>    # once; Homebrew Channel's default password is 
 
 ## Your photos
 
-Put photos in `photos/` and run `./pear sync`. Each one is cropped to 16:9 at 1600×900 and gets a date colour picked from the photo itself. One is chosen at random whenever Home comes back after 15 minutes away. Your photos never leave your machine and your TV: the folder is ignored by git. To nudge a crop or a colour, see [photos/README.md](photos/README.md).
+Put photos in `photos/` and run `./pear sync`. Each one is cropped to 16:9 at 1600×900 and gets a date colour picked from the photo itself. One is chosen at random whenever Home comes back after 15 minutes away. Your photos never leave your machine and your TV: the folder is ignored by git. Until you add your own, Pear comes with one to start: a rainy evening in Shibuya. To nudge a crop or a colour, see [photos/README.md](photos/README.md).
 
 ## Using it
 

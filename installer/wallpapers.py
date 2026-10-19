@@ -11,6 +11,9 @@ sky is hard to read). photos/photos.json can override either, per file:
     {"castle.webp": {"crop": 0.45, "accent": "#f2dfb5"}}
 
 where crop says where the 16:9 band sits in a taller photo (0 top, 1 bottom).
+
+With photos/ empty, the samples in installer/samples are used instead, so a
+fresh install has something besides the landscape.
 """
 import colorsys
 import json
@@ -59,8 +62,13 @@ def accent_for(im):
     return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
 
 
+SAMPLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples")
+
+
 def build(photos, out):
     """Write out/0.jpg .. N.jpg; returns the accents list (index = wallpaper)."""
+    if not photos_in(photos):
+        photos = SAMPLES
     os.makedirs(out, exist_ok=True)
     for f in os.listdir(out):
         if f.endswith(".jpg"):
@@ -68,9 +76,10 @@ def build(photos, out):
     render_landscape(SIZE).save(os.path.join(out, "0.jpg"), quality=86, optimize=True, progressive=True)
 
     overrides = {}
-    if os.path.exists(os.path.join(photos, "photos.json")):
-        with open(os.path.join(photos, "photos.json")) as f:
-            overrides = json.load(f)
+    for name in ("photos.json", "samples.json"):
+        if os.path.exists(os.path.join(photos, name)):
+            with open(os.path.join(photos, name)) as f:
+                overrides.update(json.load(f))
 
     accents = [DEFAULT_ACCENT]
     for i, name in enumerate(photos_in(photos), 1):

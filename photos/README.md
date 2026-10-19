@@ -9,3 +9,4 @@ either, add a `photos.json` next to them:
 
 `crop` is where the 16:9 band sits in a taller photo (0 top, 1 bottom).
 This folder is ignored by git, so your photos never leave your machine.
+Until you add any, Pear uses a sample: a rainy Shibuya street, in `installer/samples/`.
