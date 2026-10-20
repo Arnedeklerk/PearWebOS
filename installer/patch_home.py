@@ -5,12 +5,20 @@ the few files below off your TV, this applies small exact edits to them, and
 the results go back to your TV only.
 
 Every edit must match exactly once. A firmware whose Home differs fails here,
-on your computer, and nothing is installed.
+on your computer, and nothing is installed. An edit marked OPTIONAL is for a
+part some firmware lacks (webOS 6.5 has no scroll indicator, say): skipped
+when absent, and still held to exactly one match when present.
 """
 import os
 import sys
 
 APP = "/usr/palm/applications/com.webos.app.home/qml"
+
+OPTIONAL = "optional"
+
+# stands for "just before the file's final closing brace", the end of the
+# root item, which every version has
+END = object()
 
 # where PearHome.qml is mounted: a file LG Home never loads
 PEAR_SLOT = "UserInterfaceLayer/Containers/Main/GradationBG.qml"
@@ -96,35 +104,28 @@ PATCHES = {
                     else appListLoader.forceActiveFocus();
                     if(systemProperties.isTopShelfGuide) {'''),
         ('''        visible: topArea.topShelfLoaded && shelfListContainer.state === "app" && !uiController.isEditMode''',
-         '''        visible: !skinHome.skinActive && topArea.topShelfLoaded && shelfListContainer.state === "app" && !uiController.isEditMode'''),
-        ('''    Connections {
-        target: uiController
-
-        ignoreUnknownSignals: true
-
-        onHomeShownChanged: {''',
-         LOADER + '''    Connections {
-        target: uiController
-
-        ignoreUnknownSignals: true
-
-        onHomeShownChanged: {'''),
+         '''        visible: !skinHome.skinActive && topArea.topShelfLoaded && shelfListContainer.state === "app" && !uiController.isEditMode''',
+         OPTIONAL),
+        (END, LOADER),
     ],
     "UserInterfaceLayer/UIController.qml": [
         # power-on opens the full Home and leaves it up, instead of a half
-        # Home that closes itself after 8 seconds
+        # Home that closes itself after 8 seconds (without these, homeguard
+        # reopens it a few seconds later)
         ('''                } else {
                     root.isAutoLaunch = true;
                     root.currentMode = "half";
                 }''',
          '''                } else {
                     root.currentMode = "main";
-                }'''),
+                }''',
+         OPTIONAL),
         ('''                if(root.currentMode === "main") return;
                 root.isAutoLaunch = true;
                 root.currentMode = "half";''',
          '''                if(root.currentMode === "main") return;
-                root.currentMode = "main";'''),
+                root.currentMode = "main";''',
+         OPTIONAL),
     ],
 }
 
@@ -139,8 +140,17 @@ def build(stock, out, pear_qml, fill):
     for rel, edits in PATCHES.items():
         with open(os.path.join(stock, rel), encoding="utf-8") as f:
             text = f.read()
-        for old, new in edits:
+        for old, new, *flags in edits:
+            if old is END:
+                cut = text.rstrip().rfind("}")
+                if cut < 0:
+                    sys.exit(f"{rel}: no closing brace to insert before. Nothing was installed.")
+                text = text[:cut] + new + text[cut:]
+                continue
             n = text.count(old)
+            if n == 0 and OPTIONAL in flags:
+                print(f"  (skipped an edit to {rel}: this firmware hasn't got that part)")
+                continue
             if n != 1:
                 sys.exit(f"{rel}: this firmware's Home differs from the one Pear knows "
                          f"(expected 1 match, found {n}). Nothing was installed.")

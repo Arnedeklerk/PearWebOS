@@ -154,6 +154,10 @@ def build_and_push(conf):
 def preflight(conf):
     if not conf["tv"]:
         sys.exit("No TV yet: run ./pear setup")
+    try:
+        socket.create_connection((conf["tv"], 22), timeout=5).close()
+    except OSError:
+        sys.exit(f"Can't reach the TV at {conf['tv']}. Is it on, and is SSH on in Homebrew Channel?")
     if subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", f"root@{conf['tv']}", "true"],
                       capture_output=True).returncode != 0:
         sys.exit(f"Can't log into root@{conf['tv']} with an SSH key.\n"
