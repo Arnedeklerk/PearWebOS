@@ -135,7 +135,7 @@ def build_and_push(conf):
             "WALLPAPERS": str(len(accents) - 1),
             "ACCENTS": json.dumps(accents),
         })
-        with open(os.path.join(tmp, "pear.conf"), "w") as f:
+        with open(os.path.join(tmp, "pear.conf"), "w", newline="\n") as f:
             for key in ("guard", "boot_to_home", "quick_start", "no_update_prompt"):
                 f.write(f"{key.upper()}={1 if conf[key] else 0}\n")
 
@@ -144,10 +144,12 @@ def build_and_push(conf):
             for sub in ("files", "wallpapers", "pear.conf"):
                 tar.add(os.path.join(tmp, sub), arcname=sub)
             for script in ("pearwebos", "homeguard", "luna-send-n", "tvkey.js"):
-                info = tar.gettarinfo(os.path.join(HERE, "tv", script), arcname=script)
-                info.mode = 0o755
+                # LF only, whatever the checkout did: "#!/bin/sh\r" is "not found"
                 with open(os.path.join(HERE, "tv", script), "rb") as f:
-                    tar.addfile(info, f)
+                    data = f.read().replace(b"\r\n", b"\n")
+                info = tarfile.TarInfo(script)
+                info.size, info.mode = len(data), 0o755
+                tar.addfile(info, io.BytesIO(data))
 
     print("Installing on the TV...")
     ssh(conf, f"mkdir -p {TV_DIR} && cd {TV_DIR} && {{ [ -x ./pearwebos ] && ./pearwebos unmount; true; }} && "

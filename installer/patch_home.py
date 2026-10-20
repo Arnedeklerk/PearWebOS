@@ -166,5 +166,5 @@ def build(stock, out, pear_qml, fill):
 def write(out, rel, text):
     dest = os.path.join(out, rel)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    with open(dest, "w", encoding="utf-8") as f:
+    with open(dest, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)

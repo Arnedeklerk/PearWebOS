@@ -1,0 +1,6 @@
+# the TV runs these with busybox sh and node: a Windows checkout's CRLF
+# would make "#!/bin/sh\r", which the TV cannot find
+* text=auto eol=lf
+*.webp binary
+*.jpg binary
+*.png binary
