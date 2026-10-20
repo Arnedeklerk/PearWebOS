@@ -1,6 +1,7 @@
 // tvkey: press remote buttons on the TV, for testing (PearWebOS).
 //   node tvkey.js DOWN RIGHT RIGHT OK BACK
 //   node tvkey.js HOLD_OK          (OK held for a second)
+//   node tvkey.js WHEEL_DOWN MOVE:200,-80   (Magic Remote wheel and pointer)
 // Writes key events into the IR remote's evdev node ("LGE RCU"); 32-bit ARM,
 // so an input_event is 16 bytes: timeval (2 x int32), type, code, value.
 var fs = require('fs');
@@ -32,6 +33,24 @@ var i = 0;
 (function next() {
     if (i >= names.length) { fs.closeSync(fd); return; }
     var name = names[i++];
+    // the Magic Remote's wheel and pointer are relative motion on its own node
+    if (/^WHEEL_|^MOVE:/.test(name)) {
+        var mfd = fs.openSync(process.env.TVKEY_MOUSE || '/dev/input/event3', 'w');
+        if (name === 'WHEEL_DOWN' || name === 'WHEEL_UP') {
+            fs.writeSync(mfd, ev(2, 8, name === 'WHEEL_DOWN' ? -1 : 1));
+            fs.writeSync(mfd, ev(0, 0, 0));
+        } else {
+            var d = name.slice(5).split(',').map(Number), steps = 10;
+            for (var k = 0; k < steps; k++) {
+                fs.writeSync(mfd, ev(2, 0, Math.round(d[0] / steps)));
+                fs.writeSync(mfd, ev(2, 1, Math.round(d[1] / steps)));
+                fs.writeSync(mfd, ev(0, 0, 0));
+            }
+        }
+        fs.closeSync(mfd);
+        setTimeout(next, 450);
+        return;
+    }
     var hold = name.indexOf('HOLD_') === 0;
     var code = codeOf(hold ? name.slice(5) : name);
     if (code === undefined) { console.error('unknown key ' + name); process.exit(2); }

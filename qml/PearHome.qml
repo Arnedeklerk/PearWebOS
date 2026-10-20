@@ -247,6 +247,41 @@ FocusScope {
         Behavior on opacity { NumberAnimation { duration: 300 } }
     }
 
+    // ---- the Magic Remote's pointer and wheel ----
+
+    // LG's Home is still live beneath Pear, so pointer and wheel input that
+    // Pear doesn't take lands on it: the wheel scrolls its hidden shelves and
+    // hovering hands focus to its hidden buttons, after which the arrows go
+    // there. This takes all of it, and the wheel steps through the rows.
+    property real wheelTravel: 0
+
+    function stepDown() {
+        if (!drawer) { openDrawer(); return; }
+        var c = grid.currentIndex, last = drawerApps.length - 1;
+        if (c + columns <= last) grid.currentIndex = c + columns;
+        else if (Math.floor(c / columns) < Math.floor(last / columns)) grid.currentIndex = last;
+        grid.forceActiveFocus();
+    }
+
+    function stepUp() {
+        if (!drawer) return;
+        if (grid.currentIndex < columns) closeDrawer();
+        else grid.currentIndex -= columns;
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.AllButtons
+        onWheel: {
+            // a notch is 120; a remote may send it in smaller pieces
+            home.wheelTravel += wheel.angleDelta.y;
+            while (home.wheelTravel <= -120) { home.wheelTravel += 120; home.stepDown(); }
+            while (home.wheelTravel >= 120) { home.wheelTravel -= 120; home.stepUp(); }
+            wheel.accepted = true;
+        }
+    }
+
     // ---- page: slides up to make the dock the top row of the drawer ----
 
     Item {
@@ -367,6 +402,8 @@ FocusScope {
 
         // "All apps" with a drawn chevron (LG's font has no glyph for one)
         Row {
+            id: allApps
+
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: dock.bottom
             anchors.topMargin: r(80)
@@ -400,6 +437,13 @@ FocusScope {
                 font.weight: fontManager.smart_Regular.weight
                 font.pixelSize: r(28)
             }
+        }
+
+        MouseArea {
+            anchors.fill: allApps
+            anchors.margins: -r(16)
+            enabled: !home.drawer
+            onClicked: home.openDrawer()
         }
 
         // every other app, in the user's order
@@ -469,6 +513,23 @@ FocusScope {
             width: home.tileW
             height: home.tileH
             z: focused ? 2 : 1
+
+            // the pointer: hover picks the tile, a click opens it, a long
+            // press opens Edit App List (as holding OK does)
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                // the drawer's tiles only while it is open; with it open, the
+                // dock still takes clicks but not hover (that would close it)
+                enabled: t.view === dockList || home.drawer
+                onEntered: {
+                    if (t.view === dockList && home.drawer) return;
+                    t.view.currentIndex = index;
+                    t.view.forceActiveFocus();
+                }
+                onClicked: home.launch(t.app)
+                onPressAndHold: uiController.startEdit("app")
+            }
 
             RectangularGlow {
                 anchors.fill: card
