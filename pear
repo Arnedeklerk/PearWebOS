@@ -114,9 +114,16 @@ def build_and_push(conf):
     import wallpapers
 
     print("Copying LG Home's files from the TV (they stay on your machine)...")
+    # with Pear installed, its own copies are mounted over LG's; take them off
+    # first (Home keeps running: it read its files when it started)
+    ssh(conf, f"[ -x {TV_DIR}/pearwebos ] && {TV_DIR}/pearwebos unmount; true")
     stock = os.path.join(CACHE, "stock")
     for rel in patch_home.NEEDED:
         pull(conf, f"{patch_home.APP}/{rel}", os.path.join(stock, rel))
+        with open(os.path.join(stock, rel), encoding="utf-8", errors="replace") as f:
+            text = f.read()
+            if "skinHome" in text or "PearWebOS" in text:
+                sys.exit(f"{rel} on the TV is still Pear's copy, not LG's. Run ./pear off, then try again.")
 
     with tempfile.TemporaryDirectory() as tmp:
         print("Building wallpapers from photos/ ...")
