@@ -149,7 +149,7 @@ def build(stock, out, pear_qml, fill):
                 continue
             n = text.count(old)
             if n == 0 and OPTIONAL in flags:
-                print(f"  (skipped an edit to {rel}: this firmware hasn't got that part)")
+                print(f"  ({rel}: one edit not needed on this firmware)")
                 continue
             if n != 1:
                 sys.exit(f"{rel}: this firmware's Home differs from the one Pear knows "

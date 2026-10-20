@@ -24,6 +24,8 @@ PearWebOS changes nothing on the TV's system partition. It mounts three files ov
 | TV | webOS | Firmware | Works |
 |---|---|---|---|
 | LG 65NANO886PB (2021 NanoCell) | 6.4.0 | 03.41.05 | Yes |
+| LG OLED65A1PTA (2021 OLED) | 6.5.0 | 03.51.16 | Yes |
+| LG 86UP80009LA (2021 UHD) | 6.5.3 | 03.53.45 | Yes |
 
 Tried it on another TV? Please [open an issue](https://github.com/Arnedeklerk/PearWebOS/issues/new) with the model, webOS version and firmware (Settings → General → About This TV), and whether it worked, so this table can grow.
 

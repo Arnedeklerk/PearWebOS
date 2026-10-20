@@ -274,13 +274,27 @@ FocusScope {
             Text {
                 id: greetingLine
 
+                // room up to the clock (which is never wider than this reserve);
+                // a long name shrinks the line to fit, then is cut short
+                readonly property real room: header.width - r(110) - r(110) - r(480)
+
                 x: r(110)
                 y: r(120)
+                width: room
+                elide: Text.ElideRight
                 text: home.greeting()
                 color: "#ffffff"
                 font.family: fontManager.smart_Light.family
                 font.weight: fontManager.smart_Light.weight
+                font.pixelSize: Math.max(r(52), Math.min(r(78), Math.floor(r(78) * room / Math.max(1, greetingWidth.advanceWidth))))
+            }
+
+            TextMetrics {
+                id: greetingWidth
+                font.family: fontManager.smart_Light.family
+                font.weight: fontManager.smart_Light.weight
                 font.pixelSize: r(78)
+                text: greetingLine.text
             }
 
             Text {
@@ -478,15 +492,16 @@ FocusScope {
                 antialiasing: true
                 Behavior on scale { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
 
+                // decoded at its own size and never drawn larger: a 130 px icon
+                // shows pixel for pixel, a 192 px one scales down crisply
                 Image {
                     anchors.centerIn: parent
-                    height: parent.height * 0.94
+                    height: Math.min(parent.height * 0.94, implicitHeight > 0 ? implicitHeight * home.s : parent.height * 0.94)
                     width: height
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     mipmap: true
                     asynchronous: true
-                    sourceSize.width: 260
                     source: !t.app ? "" : (t.app.extraLargeIcon || t.app.largeIcon || t.app.icon || "")
                 }
 
