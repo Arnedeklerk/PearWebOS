@@ -63,18 +63,31 @@ Get-Service ssh-agent | Set-Service -StartupType Automatic; Start-Service ssh-ag
 ssh-add
 ```
 
-`./pear setup` finds the TV on your network and asks a few questions, then installs. It takes about a minute. Run it again any time to change an answer; it remembers the rest.
+## What setup asks
 
-- **Greeting:** the name in "Good evening, ___", or blank for none.
-- **Clock:** 24 hour, or 12 hour with a small AM/PM.
-- **Date style:** "Tuesday 20 October", "Tuesday, October 20", "Tue, Oct 20" or "Tue, Oct 20th".
-- **Optional touches**, each on or off:
-  - *rise-in*: the greeting and dock fade in and rise a little when Home appears;
-  - *drift*: the photo zooms slowly in and out;
-  - *quiet*: after 45 seconds untouched, the dock fades away and leaves the photo, clock and date (the first press only wakes it);
-  - *title rise*: the focused app's name rises into place.
-- **Live TV:** whether you watch it through an aerial or cable. If not, Pear keeps Home up instead of an empty Live TV.
-- **Power-on:** straight to Home, Quick Start+, and hiding LG's "update now?" prompt.
+`./pear setup` takes about a minute. Run it again any time to change an answer; it remembers the rest, and offers the current answer as the default each time. Press Enter to keep a default.
+
+**Finding the TV.** The first time, setup scans your network for LG TVs and lists them, marking the ones with SSH open, then asks for the TV's address with the best match filled in. Once connected it prints the TV's webOS version, with a note if it isn't webOS 6 (Pear may refuse to install there, safely).
+
+**The questions**, in the order they come:
+
+| Question | Default | What it changes |
+|---|---|---|
+| Name for the greeting | blank | The name in "Good evening, ___". Blank leaves just "Good evening". |
+| Clock: 24 or 12 hour | 24 | 12 hour shows a small AM/PM beside the time. |
+| Date style | 1 | The line under the greeting: 1 "Tuesday 20 October", 2 "Tuesday, October 20", 3 "Tue, Oct 20" or 4 "Tue, Oct 20th". |
+| Greeting and dock rise in when Home appears? | yes | A short fade-and-rise each time Home comes up. |
+| Background photo slowly zooms in and out? | yes | A slow drift on the photo. |
+| After 45 seconds untouched, fade the dock away? | yes | Quiet mode: leaves the photo, clock and date. The first press only wakes it. Kinder to OLED panels. |
+| The focused app's name rises as it fades in? | yes | The title under a tile rises into place as focus lands on it. |
+| Do you watch Live TV through an aerial or cable? | no | Answering no turns on `homeguard`, which opens Home whenever the TV would otherwise sit on an empty Live TV. Answer yes and it stays off. |
+| Power on straight to Home? | yes | Lands on Home at power-on instead of LG's "Today" wallpapers or the last input. |
+| Turn on Quick Start+? | yes | The TV sleeps rather than shuts down, so power-on resumes Pear at once. |
+| Hide LG's "new software, update now?" prompt? | yes | An update can remove root, and Pear with it. See [Good to know](#good-to-know). |
+
+Setup then copies LG Home's files off the TV, builds Pear's, installs and starts it.
+
+Answers live in `.pear.json` next to `pear`, which git ignores. You can edit it by hand and run `./pear sync` to apply the change without going through the questions again. Settings Pear changed on the TV itself (power-on screen, Quick Start+, update prompt) are left as they are by `./pear uninstall`; change them back in the TV's own Settings if you want.
 
 ## Your photos
 
