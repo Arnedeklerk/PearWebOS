@@ -54,6 +54,13 @@ FocusScope {
     readonly property string dateFormat: "@DATE@"
     readonly property bool dateOrdinal: @DATE_ORDINAL@
 
+    // optional touches, chosen in setup
+    readonly property bool optEntrance: @ENTRANCE@    // greeting and dock rise in when Home appears
+    readonly property bool optDrift: @DRIFT@          // the photo slowly zooms in and out
+    readonly property bool optQuiet: @QUIET@          // idle: the dock fades away, leaving photo and clock
+    readonly property bool optTitleRise: @TITLE_RISE@ // the focused app's name rises as it fades in
+    readonly property int quietAfter: 45 * 1000
+
     property var dockApps: []
     property var drawerApps: []
     property bool drawer: false
@@ -134,8 +141,15 @@ FocusScope {
         target: uiController
         ignoreUnknownSignals: true
         onHomeShownChanged: {
-            if (!uiController.homeShown) home.hiddenAt = Date.now();
-            else if (home.hiddenAt && Date.now() - home.hiddenAt > home.wallpaperAfter) home.pickWallpaper();
+            if (!uiController.homeShown) {
+                home.hiddenAt = Date.now();
+                home.quiet = false;
+                return;
+            }
+            if (home.hiddenAt && Date.now() - home.hiddenAt > home.wallpaperAfter) home.pickWallpaper();
+            home.tick();
+            home.quiet = false;
+            if (home.optEntrance) enterAnim.restart();
         }
     }
 
@@ -153,13 +167,92 @@ FocusScope {
         onDataChanged: rebuildTimer.restart()
     }
 
+    // the clock: updated just after each minute starts, not every few
+    // seconds (and again whenever Home comes back, in case the TV slept)
+    function tick() {
+        now = new Date();
+        clockTimer.interval = 60050 - (now.getSeconds() * 1000 + now.getMilliseconds());
+    }
+
     Timer {
-        interval: 5000
+        id: clockTimer
+        interval: 1000
         running: home.visible
         repeat: true
         triggeredOnStart: true
-        onTriggered: home.now = new Date()
+        onTriggered: home.tick()
     }
+
+    // ---- entrance: the page fades in and rises a little when Home appears ----
+
+    property real enter: 1
+
+    NumberAnimation {
+        id: enterAnim
+        target: home
+        property: "enter"
+        from: 0
+        to: 1
+        duration: 380
+        easing.type: Easing.OutCubic
+    }
+
+    // ---- quiet: after a while untouched, only the photo, clock and date ----
+
+    property bool quiet: false
+    property double wokeAt: 0
+
+    Timer {
+        id: idleTimer
+        interval: home.quietAfter
+        running: home.optQuiet && !home.quiet && !home.drawer && uiController.homeShown
+        onTriggered: {
+            home.quiet = true;
+            // keys now come to Home itself, so the first press only wakes
+            home.forceActiveFocus();
+        }
+    }
+
+    function wake() {
+        if (!quiet) return;
+        quiet = false;
+        wokeAt = Date.now();
+        takeFocus();
+    }
+
+    // any sign of life: wake up and start the idle count again
+    function poke() {
+        wake();
+        if (idleTimer.running) idleTimer.restart();
+    }
+
+    // ---- bump: the focused tile nudges when there is nowhere to go ----
+
+    property real bumpX: 0
+    property real bumpY: 0
+
+    function bump(dx, dy) {
+        poke();
+        bumpAnim.dx = dx * r(12);
+        bumpAnim.dy = dy * r(12);
+        bumpAnim.restart();
+    }
+
+    SequentialAnimation {
+        id: bumpAnim
+        property real dx: 0
+        property real dy: 0
+        ParallelAnimation {
+            NumberAnimation { target: home; property: "bumpX"; to: bumpAnim.dx; duration: 60; easing.type: Easing.OutQuad }
+            NumberAnimation { target: home; property: "bumpY"; to: bumpAnim.dy; duration: 60; easing.type: Easing.OutQuad }
+        }
+        ParallelAnimation {
+            NumberAnimation { target: home; property: "bumpX"; to: 0; duration: 200; easing.type: Easing.OutBack }
+            NumberAnimation { target: home; property: "bumpY"; to: 0; duration: 200; easing.type: Easing.OutBack }
+        }
+    }
+
+    onDrawerChanged: poke()
 
     // OK launches; held for 0.7s it opens LG's Edit Home to reorder.
     // A held remote button arrives as press/release pairs that are not marked
@@ -188,6 +281,17 @@ FocusScope {
     }
 
     Keys.onPressed: {
+        if (home.quiet) {
+            home.wake();
+            event.accepted = true;
+            return;
+        }
+        // the OK that woke Home is not also a launch
+        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && Date.now() - home.wokeAt < 600) {
+            event.accepted = true;
+            return;
+        }
+        home.poke();
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             releaseTimer.stop();
             if (!home.holding) {
@@ -201,6 +305,10 @@ FocusScope {
     }
 
     Keys.onReleased: {
+        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && Date.now() - home.wokeAt < 600) {
+            event.accepted = true;
+            return;
+        }
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             if (home.holding) releaseTimer.restart();
             event.accepted = true;
@@ -219,14 +327,95 @@ FocusScope {
         color: "#0c0c1a"
     }
 
-    Image {
+    // two photos, so a new one fades in over the old instead of cutting
+    // (through the navy above) while it loads
+    Item {
+        id: backdrop
+
+        property Image front: null
+
         anchors.fill: parent
-        fillMode: Image.PreserveAspectCrop
-        sourceSize.width: 1920
-        source: "file:///var/lib/pearwebos/wallpapers/" + home.wallpaper + ".jpg"
-        asynchronous: true
-        // a missing photo falls back to the dusk landscape (0.jpg)
-        onStatusChanged: if (status === Image.Error && home.wallpaper > 0) home.wallpaper = 0
+
+        function path(n) { return "file:///var/lib/pearwebos/wallpapers/" + n + ".jpg"; }
+
+        function show(n) {
+            var src = path(n);
+            if (front && String(front.source) === src) return;
+            var next = front === wpA ? wpB : wpA;
+            if (String(next.source) === src && next.status === Image.Loading) return;
+            // a fade still running would clear `next` when it ends; end it now
+            if (fade.running) fade.complete();
+            next.opacity = 0;
+            next.source = src;
+            if (next.status === Image.Ready) reveal(next);   // already decoded
+        }
+
+        function reveal(img) {
+            if (img === front) return;
+            var old = front;
+            img.z = 1;
+            if (old) old.z = 0;
+            front = img;
+            fade.old = old;
+            fade.target = img;
+            fade.restart();
+        }
+
+        NumberAnimation {
+            id: fade
+            property Image old: null
+            property: "opacity"
+            from: 0
+            to: 1
+            duration: 800
+            easing.type: Easing.InOutQuad
+            // the old photo is covered now; let it go
+            onStopped: if (old && old !== backdrop.front) { old.opacity = 0; old.source = ""; }
+        }
+
+        Connections {
+            target: home
+            onWallpaperChanged: backdrop.show(home.wallpaper)
+        }
+
+        Component.onCompleted: show(home.wallpaper)
+
+        // a slow zoom in and out, about two minutes a cycle
+        SequentialAnimation on scale {
+            running: home.optDrift && home.visible
+            loops: Animation.Infinite
+            NumberAnimation { from: 1.0; to: 1.05; duration: 60000; easing.type: Easing.InOutSine }
+            NumberAnimation { from: 1.05; to: 1.0; duration: 60000; easing.type: Easing.InOutSine }
+        }
+
+        Image {
+            id: wpA
+            anchors.fill: parent
+            fillMode: Image.PreserveAspectCrop
+            sourceSize.width: 1920
+            asynchronous: true
+            smooth: true
+            opacity: 0
+            onStatusChanged: backdrop.loaded(wpA)
+        }
+
+        Image {
+            id: wpB
+            anchors.fill: parent
+            fillMode: Image.PreserveAspectCrop
+            sourceSize.width: 1920
+            asynchronous: true
+            smooth: true
+            opacity: 0
+            onStatusChanged: backdrop.loaded(wpB)
+        }
+
+        function loaded(img) {
+            if (img.status === Image.Ready && img !== front && String(img.source) !== "") reveal(img);
+            // a missing photo falls back to the dusk landscape (0.jpg)
+            // (after this handler returns: not while the image is mid-update)
+            else if (img.status === Image.Error && home.wallpaper > 0) Qt.callLater(function() { home.wallpaper = 0; });
+        }
     }
 
     // keeps the greeting readable over bright photos
@@ -243,6 +432,8 @@ FocusScope {
     // darkens the lower half so tiles and titles read
     Rectangle {
         anchors.fill: parent
+        opacity: home.quiet ? 0.35 : 1
+        Behavior on opacity { NumberAnimation { duration: 900 } }
         gradient: Gradient {
             GradientStop { position: 0.0; color: Qt.rgba(0.03, 0.03, 0.07, 0.0) }
             GradientStop { position: 0.45; color: Qt.rgba(0.03, 0.03, 0.07, 0.10) }
@@ -284,7 +475,9 @@ FocusScope {
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.AllButtons
+        onPositionChanged: home.poke()
         onWheel: {
+            home.poke();
             // a notch is 120; a remote may send it in smaller pieces
             home.wheelTravel += wheel.angleDelta.y;
             while (home.wheelTravel <= -120) { home.wheelTravel += 120; home.stepDown(); }
@@ -301,6 +494,8 @@ FocusScope {
         width: parent.width
         height: parent.height
         y: home.drawer ? -(dock.y - r(64)) : 0
+        opacity: home.enter
+        transform: Translate { y: (1 - home.enter) * home.r(24) }
 
         Behavior on y { NumberAnimation { duration: 380; easing.type: Easing.OutCubic } }
 
@@ -409,6 +604,8 @@ FocusScope {
             color: Qt.rgba(1, 1, 1, 0.11)
             border.color: Qt.rgba(1, 1, 1, 0.10)
             border.width: Math.max(1, r(1))
+            opacity: home.quiet ? 0 : 1
+            Behavior on opacity { NumberAnimation { duration: home.quiet ? 900 : 200 } }
 
             ListView {
                 id: dockList
@@ -426,8 +623,20 @@ FocusScope {
                 delegate: tile
                 highlightFollowsCurrentItem: false
 
-                Keys.onDownPressed: home.openDrawer()
-                Keys.onUpPressed: event.accepted = true
+                onCurrentIndexChanged: home.poke()
+                Keys.onDownPressed: {
+                    if (home.drawerApps.length) home.openDrawer();
+                    else home.bump(0, 1);
+                }
+                Keys.onUpPressed: home.bump(0, -1)
+                Keys.onLeftPressed: {
+                    if (currentIndex > 0) event.accepted = false;
+                    else home.bump(-1, 0);
+                }
+                Keys.onRightPressed: {
+                    if (currentIndex < count - 1) event.accepted = false;
+                    else home.bump(1, 0);
+                }
             }
         }
 
@@ -439,8 +648,8 @@ FocusScope {
             anchors.top: dock.bottom
             anchors.topMargin: r(80)
             spacing: r(14)
-            opacity: home.drawer || !home.drawerApps.length ? 0 : 0.55
-            Behavior on opacity { NumberAnimation { duration: 250 } }
+            opacity: home.drawer || home.quiet || !home.drawerApps.length ? 0 : 0.55
+            Behavior on opacity { NumberAnimation { duration: home.quiet ? 900 : 250 } }
 
             Canvas {
                 width: r(24)
@@ -504,6 +713,8 @@ FocusScope {
             highlightRangeMode: GridView.ApplyRange
             keyNavigationWraps: false
 
+            onCurrentIndexChanged: home.poke()
+
             Keys.onUpPressed: {
                 if (currentIndex < home.columns) home.closeDrawer();
                 else event.accepted = false;
@@ -513,6 +724,17 @@ FocusScope {
             Keys.onDownPressed: {
                 if (currentIndex + home.columns < count) event.accepted = false;
                 else if (Math.floor(currentIndex / home.columns) < Math.floor((count - 1) / home.columns)) currentIndex = count - 1;
+                else home.bump(0, 1);
+            }
+
+            Keys.onLeftPressed: {
+                if (currentIndex % home.columns > 0) event.accepted = false;
+                else home.bump(-1, 0);
+            }
+
+            Keys.onRightPressed: {
+                if (currentIndex % home.columns < home.columns - 1 && currentIndex < count - 1) event.accepted = false;
+                else home.bump(1, 0);
             }
         }
     }
@@ -544,6 +766,11 @@ FocusScope {
             width: home.tileW
             height: home.tileH
             z: focused ? 2 : 1
+            // the bump moves the focused tile, its glow and its name together
+            transform: Translate {
+                x: t.focused ? home.bumpX : 0
+                y: t.focused ? home.bumpY : 0
+            }
 
             // the pointer: hover picks the tile, a click opens it, a long
             // press opens Edit App List (as holding OK does)
@@ -554,6 +781,7 @@ FocusScope {
                 // dock still takes clicks but not hover (that would close it)
                 enabled: t.view === dockList || home.drawer
                 onEntered: {
+                    home.poke();
                     if (t.view === dockList && home.drawer) return;
                     t.view.currentIndex = index;
                     t.view.forceActiveFocus();
@@ -624,6 +852,10 @@ FocusScope {
                 font.weight: fontManager.smart_SemiBold.weight
                 font.pixelSize: home.r(26)
                 Behavior on opacity { NumberAnimation { duration: 160 } }
+                transform: Translate {
+                    y: home.optTitleRise && !t.focused ? home.r(8) : 0
+                    Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                }
             }
         }
     }

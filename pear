@@ -35,7 +35,15 @@ DATE_STYLES = [
     ("us-short", "ddd, MMM d", False, "Tue, Oct 20"),
     ("us-ordinal", "ddd, MMM d", True, "Tue, Oct 20th"),
 ]
+# optional touches on Home, asked in setup: (key, question)
+EXTRAS = [
+    ("entrance", "Greeting and dock rise in when Home appears?"),
+    ("drift", "Background photo slowly zooms in and out?"),
+    ("quiet", "After 45 seconds untouched, fade the dock away and leave just the photo and clock?"),
+    ("title_rise", "The focused app's name rises as it fades in?"),
+]
 DEFAULTS = {"tv": "", "name": "", "clock": "24", "date": "intl", "guard": True,
+            "entrance": True, "drift": True, "quiet": True, "title_rise": True,
             "boot_to_home": True, "quick_start": True, "no_update_prompt": True}
 
 
@@ -164,6 +172,7 @@ def build_and_push(conf):
             "CLOCK": "h:mm" if conf["clock"] == "12" else "HH:mm",
             "DATE": date_style(conf)[1],
             "DATE_ORDINAL": "true" if date_style(conf)[2] else "false",
+            **{key.upper(): "true" if conf[key] else "false" for key, _ in EXTRAS},
             "WALLPAPERS": str(len(accents) - 1),
             "ACCENTS": json.dumps(accents),
         })
@@ -234,6 +243,9 @@ def cmd_setup():
     # "12", "12h", "12 hour" all mean 12; anything else is 24
     conf["clock"] = "12" if ask("Clock: 24 or 12 hour", conf["clock"]).strip().startswith("12") else "24"
     conf["date"] = ask_date(conf["date"])
+    print("  A few optional touches (run ./pear setup again to change them):")
+    for key, question in EXTRAS:
+        conf[key] = ask("  " + question, conf[key])
     conf["guard"] = not ask("Do you watch Live TV through an aerial or cable?", not conf["guard"])
     conf["boot_to_home"] = ask("Power on straight to Home?", conf["boot_to_home"])
     conf["quick_start"] = ask("Turn on Quick Start+ (power-on resumes Pear instantly)?", conf["quick_start"])
