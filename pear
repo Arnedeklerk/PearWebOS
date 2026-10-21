@@ -167,11 +167,12 @@ def build_and_push(conf):
         print("Building wallpapers from photos/ ...")
         accents = wallpapers.build(os.path.join(HERE, "photos"), os.path.join(tmp, "wallpapers"))
         print("Patching LG Home...")
+        _, date_format, date_ordinal, _ = date_style(conf)
         patch_home.build(stock, os.path.join(tmp, "files"), os.path.join(HERE, "qml", "PearHome.qml"), {
             "NAME": json.dumps(conf["name"])[1:-1],
-            "CLOCK": "h:mm" if conf["clock"] == "12" else "HH:mm",
-            "DATE": date_style(conf)[1],
-            "DATE_ORDINAL": "true" if date_style(conf)[2] else "false",
+            "CLOCK": conf["clock"],
+            "DATE": date_format,
+            "DATE_ORDINAL": "true" if date_ordinal else "false",
             **{key.upper(): "true" if conf[key] else "false" for key, _ in EXTRAS},
             "WALLPAPERS": str(len(accents) - 1),
             "ACCENTS": json.dumps(accents),

@@ -8,6 +8,7 @@
 # e.g. once channels are tuned.
 #
 # Started by `pearwebos boot` / `pearwebos on`; one instance, pid in $PID.
+# Touch $DIR/debug to also log every foreground change.
 
 DIR=/var/lib/pearwebos
 PID=$DIR/homeguard.pid
@@ -68,7 +69,7 @@ while :; do
     /usr/bin/luna-send -i luna://com.webos.applicationManager/getForegroundAppInfo "$FG" 2>/dev/null |
     while read -r line; do
         ids=$(echo "$line" | front_ids)
-        [ -n "$PEAR_DEBUG" ] && log "front: [${ids% }]"
+        [ -f "$DIR/debug" ] && log "front: [${ids% }]"
         stranded "$ids" && check &
     done
     sleep 5

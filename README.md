@@ -38,7 +38,18 @@ ssh-copy-id root@<your-tv-ip>    # once; Homebrew Channel's default password is 
 ./pear setup
 ```
 
-`./pear setup` finds the TV on your network and asks a few questions: the name for the greeting, a 12 or 24 hour clock, a date style ("Tuesday 20 October", "Tuesday, October 20", "Tue, Oct 20" or "Tue, Oct 20th"), four optional touches (a rise-in when Home appears, a slow drift on the photo, a quiet mode that fades the dock after 45 seconds untouched, and app names that rise into place), whether you watch Live TV through an aerial, and three power-on choices. Then it installs. It takes about a minute.
+`./pear setup` finds the TV on your network and asks a few questions, then installs. It takes about a minute. Run it again any time to change an answer; it remembers the rest.
+
+- **Greeting:** the name in "Good evening, ___", or blank for none.
+- **Clock:** 24 hour, or 12 hour with a small AM/PM.
+- **Date style:** "Tuesday 20 October", "Tuesday, October 20", "Tue, Oct 20" or "Tue, Oct 20th".
+- **Optional touches**, each on or off:
+  - *rise-in*: the greeting and dock fade in and rise a little when Home appears;
+  - *drift*: the photo zooms slowly in and out;
+  - *quiet*: after 45 seconds untouched, the dock fades away and leaves the photo, clock and date (the first press only wakes it);
+  - *title rise*: the focused app's name rises into place.
+- **Live TV:** whether you watch it through an aerial or cable. If not, Pear keeps Home up instead of an empty Live TV.
+- **Power-on:** straight to Home, Quick Start+, and hiding LG's "update now?" prompt.
 
 ## Your photos
 
@@ -53,6 +64,7 @@ Put photos in `photos/` and run `./pear sync`. Each one is cropped to 16:9 at 16
 | ↑ / Back | back to the dock |
 | OK | open the app |
 | hold OK | LG's Edit App List, to reorder or remove apps |
+| any button | wake Home from quiet mode |
 
 LG's promo apps (LG Channels, Shop Time, Sports Alert and the like) are left off the tiles. The list is `hiddenApps` in [qml/PearHome.qml](qml/PearHome.qml).
 
@@ -76,13 +88,14 @@ LG Home is written in QML. Pear's own Home is [qml/PearHome.qml](qml/PearHome.qm
 On the TV everything lives in `/var/lib/pearwebos`, and a Homebrew Channel startup hook re-applies it at each boot:
 
 - [`pearwebos`](tv/pearwebos) mounts the files and restarts Home. LG Home is restored from memory snapshots with its QML preloaded, so it has to be cold-started to pick Pear up.
-- [`homeguard`](tv/homeguard) watches what is on screen and opens Home when the TV would otherwise sit on an empty Live TV. It is off if you said you watch Live TV.
+- [`homeguard`](tv/homeguard) watches what is on screen and opens Home when the TV would otherwise sit on an empty Live TV. It is off if you said you watch Live TV. Its log is `homeguard.log`; touch `/var/lib/pearwebos/debug` to have it log every app change too.
 - [`luna-send-n`](tv/luna-send-n) works around webOS 6.4 firmware whose `luna-send -n` prints nothing.
 
 ## Good to know
 
 - **Firmware updates.** An LG update can remove root, and Pear with it. Setup can hide LG's "update now?" prompt. If it ever appears anyway, answer No unless you mean it.
-- **A full reboot**, such as after a power cut, starts with LG's stock Home for a moment before Pear takes over. With Quick Start+ on, ordinary power-ons resume straight into Pear.
+- **A full reboot**, such as after a power cut, starts with LG's stock Home for a few seconds before Pear takes over: LG's boot image holds its own Home, so Pear has to restart it. With Quick Start+ on, ordinary power-ons resume straight into Pear.
+- **OLED TVs** that sit on Home: quiet mode leaves less on screen, which is kinder to the panel.
 - **If Pear's Home fails to load**, LG's Home shows instead, with the reason in small text in the bottom-left corner.
 
 ## Pairs well with

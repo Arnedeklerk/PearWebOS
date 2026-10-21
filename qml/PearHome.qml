@@ -49,8 +49,7 @@ FocusScope {
     property double hiddenAt: 0
 
     readonly property string name: "@NAME@"
-    readonly property string clockFormat: "@CLOCK@"
-    readonly property bool twelveHour: clockFormat === "h:mm"
+    readonly property bool twelveHour: "@CLOCK@" === "12"
     readonly property string dateFormat: "@DATE@"
     readonly property bool dateOrdinal: @DATE_ORDINAL@
 
@@ -394,7 +393,6 @@ FocusScope {
             fillMode: Image.PreserveAspectCrop
             sourceSize.width: 1920
             asynchronous: true
-            smooth: true
             opacity: 0
             onStatusChanged: backdrop.loaded(wpA)
         }
@@ -405,7 +403,6 @@ FocusScope {
             fillMode: Image.PreserveAspectCrop
             sourceSize.width: 1920
             asynchronous: true
-            smooth: true
             opacity: 0
             onStatusChanged: backdrop.loaded(wpB)
         }
@@ -584,7 +581,7 @@ FocusScope {
                 // Qt's "h" is 0-23 unless the format has AP, so do 12-hour by hand
                 text: home.twelveHour
                       ? ((home.now.getHours() % 12) || 12) + Qt.formatDateTime(home.now, ":mm")
-                      : Qt.formatDateTime(home.now, home.clockFormat)
+                      : Qt.formatDateTime(home.now, "HH:mm")
                 color: "#ffffff"
                 font.family: fontManager.smart_Light.family
                 font.weight: fontManager.smart_Light.weight
