@@ -51,6 +51,8 @@ FocusScope {
     readonly property string name: "@NAME@"
     readonly property string clockFormat: "@CLOCK@"
     readonly property bool twelveHour: clockFormat === "h:mm"
+    readonly property string dateFormat: "@DATE@"
+    readonly property bool dateOrdinal: @DATE_ORDINAL@
 
     property var dockApps: []
     property var drawerApps: []
@@ -107,6 +109,14 @@ FocusScope {
             n = 1 + (Math.floor(Math.random() * 1000003) + Date.now()) % wallpaperCount;
         } while (wallpaperCount > 1 && n === wallpaper);
         wallpaper = n;
+    }
+
+    // the date line; "20th" style when asked, which Qt formats can't do
+    function dateText() {
+        var t = Qt.formatDateTime(now, dateFormat);
+        if (!dateOrdinal) return t;
+        var d = now.getDate(), m = d % 100;
+        return t + (m >= 11 && m <= 13 ? "th" : ["th", "st", "nd", "rd"][d % 10] || "th");
     }
 
     function greeting() {
@@ -340,7 +350,7 @@ FocusScope {
                 x: r(110)
                 anchors.top: greetingLine.bottom
                 anchors.topMargin: r(10)
-                text: Qt.formatDateTime(home.now, "dddd d MMMM")
+                text: home.dateText()
                 color: home.accent
                 font.family: fontManager.smart_Regular.family
                 font.weight: fontManager.smart_Regular.weight

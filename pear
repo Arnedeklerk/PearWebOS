@@ -27,7 +27,15 @@ TV_DIR = "/var/lib/pearwebos"
 HOOK = "/var/lib/webosbrew/init.d/05-pearwebos"
 # where earlier versions put the hook
 OLD_HOOKS = ["/var/lib/webosbrew/init.d/60-pearwebos"]
-DEFAULTS = {"tv": "", "name": "", "clock": "24", "guard": True,
+# date styles for the line under the greeting: Qt date formats (the TV draws
+# them), the last with an ordinal suffix added in PearHome.qml
+DATE_STYLES = [
+    ("intl", "dddd d MMMM", False, "Tuesday 20 October"),
+    ("us", "dddd, MMMM d", False, "Tuesday, October 20"),
+    ("us-short", "ddd, MMM d", False, "Tue, Oct 20"),
+    ("us-ordinal", "ddd, MMM d", True, "Tue, Oct 20th"),
+]
+DEFAULTS = {"tv": "", "name": "", "clock": "24", "date": "intl", "guard": True,
             "boot_to_home": True, "quick_start": True, "no_update_prompt": True}
 
 
@@ -103,6 +111,26 @@ def ask(prompt, default):
     return a or default
 
 
+def date_style(conf):
+    """The DATE_STYLES entry for conf['date'] (the first one if unknown)."""
+    return next((d for d in DATE_STYLES if d[0] == conf.get("date")), DATE_STYLES[0])
+
+
+def ask_date(current):
+    print("  Date style:")
+    for i, (key, _, _, example) in enumerate(DATE_STYLES, 1):
+        print(f"    {i}. {example}")
+    keys = [d[0] for d in DATE_STYLES]
+    default = str(keys.index(current) + 1) if current in keys else "1"
+    while True:
+        a = ask("Which one (1-%d)" % len(DATE_STYLES), default).strip()
+        if a.isdigit() and 1 <= int(a) <= len(DATE_STYLES):
+            return keys[int(a) - 1]
+        if a in keys:
+            return a
+        print(f"    Please answer 1 to {len(DATE_STYLES)}.")
+
+
 # ---- building and installing ----
 
 def build_and_push(conf):
@@ -134,6 +162,8 @@ def build_and_push(conf):
         patch_home.build(stock, os.path.join(tmp, "files"), os.path.join(HERE, "qml", "PearHome.qml"), {
             "NAME": json.dumps(conf["name"])[1:-1],
             "CLOCK": "h:mm" if conf["clock"] == "12" else "HH:mm",
+            "DATE": date_style(conf)[1],
+            "DATE_ORDINAL": "true" if date_style(conf)[2] else "false",
             "WALLPAPERS": str(len(accents) - 1),
             "ACCENTS": json.dumps(accents),
         })
@@ -203,6 +233,7 @@ def cmd_setup():
     conf["name"] = ask('Name for the greeting ("Good evening, ___"; blank for none)', conf["name"])
     # "12", "12h", "12 hour" all mean 12; anything else is 24
     conf["clock"] = "12" if ask("Clock: 24 or 12 hour", conf["clock"]).strip().startswith("12") else "24"
+    conf["date"] = ask_date(conf["date"])
     conf["guard"] = not ask("Do you watch Live TV through an aerial or cable?", not conf["guard"])
     conf["boot_to_home"] = ask("Power on straight to Home?", conf["boot_to_home"])
     conf["quick_start"] = ask("Turn on Quick Start+ (power-on resumes Pear instantly)?", conf["quick_start"])

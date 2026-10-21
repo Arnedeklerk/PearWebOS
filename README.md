@@ -38,7 +38,7 @@ ssh-copy-id root@<your-tv-ip>    # once; Homebrew Channel's default password is 
 ./pear setup
 ```
 
-`./pear setup` finds the TV on your network and asks a few questions: the name for the greeting, a 12 or 24 hour clock, whether you watch Live TV through an aerial, and three power-on choices. Then it installs. It takes about a minute.
+`./pear setup` finds the TV on your network and asks a few questions: the name for the greeting, a 12 or 24 hour clock, a date style ("Tuesday 20 October", "Tuesday, October 20", "Tue, Oct 20" or "Tue, Oct 20th"), whether you watch Live TV through an aerial, and three power-on choices. Then it installs. It takes about a minute.
 
 ## Your photos
 
