@@ -1,4 +1,4 @@
-Put your own photos here (jpg, png or webp), then run `./pear sync`.
+Put your own photos here (jpg, png or webp), then run `./pear sync` (on Windows, `python3 pear sync`).
 
 Each one is cropped to 16:9 and given a date colour automatically. To adjust
 either, add a `photos.json` next to them:

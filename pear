@@ -19,6 +19,10 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# how to run this script, for the messages it prints: Windows can't run
+# ./pear directly, so there it is `python3 pear`
+WINDOWS = os.name == "nt"
+PEAR = "python3 pear" if WINDOWS else "./pear"
 sys.path.insert(0, os.path.join(HERE, "installer"))
 
 CONF = os.path.join(HERE, ".pear.json")
@@ -161,7 +165,7 @@ def build_and_push(conf):
         with open(os.path.join(stock, rel), encoding="utf-8", errors="replace") as f:
             text = f.read()
             if "skinHome" in text or "PearWebOS" in text:
-                sys.exit(f"{rel} on the TV is still Pear's copy, not LG's. Run ./pear off, then try again.")
+                sys.exit(f"{rel} on the TV is still Pear's copy, not LG's. Run {PEAR} off, then try again.")
 
     with tempfile.TemporaryDirectory() as tmp:
         print("Building wallpapers from photos/ ...")
@@ -205,9 +209,17 @@ def build_and_push(conf):
     print("  " + out.strip())
 
 
+def copy_key_command(tv):
+    """How to put this computer's SSH key on the TV (Windows has no ssh-copy-id)."""
+    if not WINDOWS:
+        return f"ssh-copy-id root@{tv}"
+    return (f'type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh root@{tv} '
+            '"mkdir -p /home/root/.ssh && cat >> /home/root/.ssh/authorized_keys"')
+
+
 def preflight(conf):
     if not conf["tv"]:
-        sys.exit("No TV yet: run ./pear setup")
+        sys.exit(f"No TV yet: run {PEAR} setup")
     try:
         socket.create_connection((conf["tv"], 22), timeout=5).close()
     except OSError:
@@ -216,8 +228,9 @@ def preflight(conf):
                       capture_output=True).returncode != 0:
         sys.exit(f"Can't log into root@{conf['tv']} with an SSH key.\n"
                  "  1. In Homebrew Channel, open Settings and turn on SSH Server.\n"
-                 f"  2. Run: ssh-copy-id root@{conf['tv']}   (the default password is alpine)\n"
-                 "  Then run ./pear setup again.")
+                 f"  2. Copy your key to the TV (the default password is alpine):\n"
+                 f"       {copy_key_command(conf['tv'])}\n"
+                 f"  Then run {PEAR} setup again.")
     if ssh(conf, "[ -d /var/lib/webosbrew/init.d ] && echo ok", check=False).strip() != "ok":
         sys.exit("This TV has no Homebrew Channel startup hooks (/var/lib/webosbrew/init.d). Is it rooted?")
 
@@ -244,7 +257,7 @@ def cmd_setup():
     # "12", "12h", "12 hour" all mean 12; anything else is 24
     conf["clock"] = "12" if ask("Clock: 24 or 12 hour", conf["clock"]).strip().startswith("12") else "24"
     conf["date"] = ask_date(conf["date"])
-    print("  A few optional touches (run ./pear setup again to change them):")
+    print(f"  A few optional touches (run {PEAR} setup again to change them):")
     for key, question in EXTRAS:
         conf[key] = ask("  " + question, conf[key])
     conf["guard"] = not ask("Do you watch Live TV through an aerial or cable?", not conf["guard"])
@@ -254,7 +267,7 @@ def cmd_setup():
     save(conf)
     print()
     build_and_push(conf)
-    print("\nDone. Put photos in photos/ and run ./pear sync to use them as backgrounds.")
+    print(f"\nDone. Put photos in photos/ and run {PEAR} sync to use them as backgrounds.")
 
 
 def cmd_sync():
@@ -293,6 +306,6 @@ if __name__ == "__main__":
     try:
         {"setup": cmd_setup, "sync": cmd_sync, "shot": cmd_shot, "uninstall": cmd_uninstall,
          "status": lambda: cmd_simple("status"), "on": lambda: cmd_simple("on"),
-         "off": lambda: cmd_simple("off")}.get(cmd, lambda: print(__doc__))()
+         "off": lambda: cmd_simple("off")}.get(cmd, lambda: print(__doc__.replace("./pear", PEAR)))()
     except KeyboardInterrupt:
         print()

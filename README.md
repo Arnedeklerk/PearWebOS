@@ -14,10 +14,11 @@ PearWebOS changes nothing on the TV's system partition. It mounts three files ov
 ## What you need
 
 - An LG TV on **webOS 6** (2021 models), **rooted** with [Homebrew Channel](https://www.webosbrew.org/), and **SSH turned on** in Homebrew Channel's settings. See [Tested on](#tested-on). Other webOS 6 models should work. On a firmware whose Home differs, setup stops before installing anything.
-- A Mac or Linux computer on the same network, with Python 3 and two libraries:
+- A Mac, Linux or Windows 10/11 computer on the same network, with Python 3 and two libraries:
   ```bash
   python3 -m pip install --user pillow numpy
   ```
+  On Windows, use the OpenSSH client that comes with Windows (`ssh` in PowerShell).
 
 ## Tested on
 
@@ -31,11 +32,34 @@ Tried it on another TV? Please [open an issue](https://github.com/Arnedeklerk/Pe
 
 ## Install
 
+On a Mac or Linux:
+
 ```bash
 git clone https://github.com/Arnedeklerk/PearWebOS.git
 cd PearWebOS
 ssh-copy-id root@<your-tv-ip>    # once; Homebrew Channel's default password is alpine
 ./pear setup
+```
+
+On Windows, in PowerShell: Windows can't run `./pear` directly, so put `python3` in front of it, and Windows has no `ssh-copy-id`, so copy the key with `ssh` instead:
+
+```powershell
+git clone https://github.com/Arnedeklerk/PearWebOS.git
+cd PearWebOS
+ssh-keygen -t ed25519            # once, if you have no SSH key yet
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh root@<your-tv-ip> "mkdir -p /home/root/.ssh && cat >> /home/root/.ssh/authorized_keys"
+python3 pear setup
+```
+
+Everywhere this README says `./pear`, Windows users type `python3 pear` (if `python3` isn't found, try `py pear`).
+
+Once your key is on the TV, Homebrew Channel stops accepting the `alpine` password, so give the key a passphrase. To be safe if you lose this computer, add a second key from another machine the same way.
+
+`pear` can't stop to ask for a passphrase, so a key with one needs the SSH agent holding it. A Mac does this through the keychain. On Windows the agent is off by default; turn it on once in an administrator PowerShell, then add your key:
+
+```powershell
+Get-Service ssh-agent | Set-Service -StartupType Automatic; Start-Service ssh-agent
+ssh-add
 ```
 
 `./pear setup` finds the TV on your network and asks a few questions, then installs. It takes about a minute. Run it again any time to change an answer; it remembers the rest.
@@ -69,6 +93,8 @@ Put photos in `photos/` and run `./pear sync`. Each one is cropped to 16:9 at 16
 LG's promo apps (LG Channels, Shop Time, Sports Alert and the like) are left off the tiles. The list is `hiddenApps` in [qml/PearHome.qml](qml/PearHome.qml).
 
 ## Commands
+
+On Windows, type `python3 pear` in place of `./pear`.
 
 ```
 ./pear setup       find the TV, ask, install
