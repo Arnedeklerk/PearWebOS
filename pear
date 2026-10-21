@@ -24,7 +24,9 @@ sys.path.insert(0, os.path.join(HERE, "installer"))
 CONF = os.path.join(HERE, ".pear.json")
 CACHE = os.path.join(HERE, ".cache")
 TV_DIR = "/var/lib/pearwebos"
-HOOK = "/var/lib/webosbrew/init.d/60-pearwebos"
+HOOK = "/var/lib/webosbrew/init.d/05-pearwebos"
+# where earlier versions put the hook
+OLD_HOOKS = ["/var/lib/webosbrew/init.d/60-pearwebos"]
 DEFAULTS = {"tv": "", "name": "", "clock": "24", "guard": True,
             "boot_to_home": True, "quick_start": True, "no_update_prompt": True}
 
@@ -154,7 +156,10 @@ def build_and_push(conf):
     print("Installing on the TV...")
     ssh(conf, f"mkdir -p {TV_DIR} && cd {TV_DIR} && {{ [ -x ./pearwebos ] && ./pearwebos unmount; true; }} && "
               "rm -rf files wallpapers && tar xf -", stdin=buf.getvalue())
-    ssh(conf, f"printf '#!/bin/sh\\n# PearWebOS\\n{TV_DIR}/pearwebos boot\\n' > {HOOK} && chmod 755 {HOOK}")
+    # early, and in the background: boot takes a while and must not hold up
+    # (or be held up by) other startup hooks
+    ssh(conf, f"rm -f {' '.join(OLD_HOOKS)}; "
+              f"printf '#!/bin/sh\\n# PearWebOS\\nsetsid {TV_DIR}/pearwebos boot </dev/null >/dev/null 2>&1 &\\n' > {HOOK} && chmod 755 {HOOK}")
     print("Starting Pear Home (about 15 seconds)...")
     out = ssh(conf, f"{TV_DIR}/pearwebos on 2>&1 | tail -1; {TV_DIR}/pearwebos settings; true")
     print("  " + out.strip())
@@ -196,7 +201,8 @@ def cmd_setup():
 
     print()
     conf["name"] = ask('Name for the greeting ("Good evening, ___"; blank for none)', conf["name"])
-    conf["clock"] = ask("Clock: 24 or 12 hour", conf["clock"])
+    # "12", "12h", "12 hour" all mean 12; anything else is 24
+    conf["clock"] = "12" if ask("Clock: 24 or 12 hour", conf["clock"]).strip().startswith("12") else "24"
     conf["guard"] = not ask("Do you watch Live TV through an aerial or cable?", not conf["guard"])
     conf["boot_to_home"] = ask("Power on straight to Home?", conf["boot_to_home"])
     conf["quick_start"] = ask("Turn on Quick Start+ (power-on resumes Pear instantly)?", conf["quick_start"])
@@ -233,7 +239,7 @@ def cmd_uninstall():
     conf = load()
     preflight(conf)
     print(ssh(conf, f"[ -x {TV_DIR}/pearwebos ] && {TV_DIR}/pearwebos off 2>&1 | tail -1; "
-                    f"rm -f {HOOK}; rm -rf {TV_DIR}; echo 'PearWebOS removed; LG Home is back.'", check=False).strip())
+                    f"rm -f {HOOK} {' '.join(OLD_HOOKS)}; rm -rf {TV_DIR}; echo 'PearWebOS removed; LG Home is back.'", check=False).strip())
     print("Settings Pear changed (power-on screen, Quick Start+, update prompt) are left as they are;\n"
           "change them back in the TV's own Settings if you want.")
 

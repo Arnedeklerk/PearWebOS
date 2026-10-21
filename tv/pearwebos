@@ -66,26 +66,43 @@ open_home() { $LS -n 1 luna://com.webos.applicationManager/launch '{"id":"com.we
 
 guard() { [ "$GUARD" = 1 ] && "$DIR/homeguard" "$1"; }
 
-# Throw away the snapshot and start Home from its files; wait for the app
-# manager to take a new one. Non-zero if Home does not stay up.
+# Throw away the snapshot and start Home from its files. Returns as soon as
+# the new Home process exists (no fixed sleeps: every second here is a second
+# of stock Home on screen). Non-zero if no Home came up within 10s.
 cold_start() {
     rm -rf "$CKPT"
     pid=$(home_pid)
-    [ -n "$pid" ] && kill "$pid"
-    sleep 2
+    if [ -n "$pid" ]; then
+        kill "$pid"
+        i=0
+        while kill -0 "$pid" 2>/dev/null && [ $i -lt 50 ]; do usleep 100000; i=$((i + 1)); done
+    fi
     open_home
     i=0
-    while [ $i -lt 30 ]; do
-        sleep 1; i=$((i + 1))
-        [ -n "$(home_pid)" ] && [ -d "$CKPT" ] && break
-    done
-    sleep 8
+    while [ -z "$(home_pid)" ] && [ $i -lt 100 ]; do usleep 100000; i=$((i + 1)); done
     [ -n "$(home_pid)" ]
+}
+
+# After cold_start: wait (up to 30s) for the app manager to snapshot the new
+# Home, let it finish writing, and check Home stayed up. Only the stamp needs
+# this, so on boot it runs after Pear is already on screen.
+wait_snapshot() {
+    i=0
+    while [ ! -d "$CKPT" ] && [ $i -lt 30 ]; do sleep 1; i=$((i + 1)); done
+    sleep 8
+    [ -n "$(home_pid)" ] && [ -d "$CKPT" ]
+}
+
+# true when nothing but Live TV (or nothing) is in front
+front_is_bare() {
+    ids=$($LS -n 1 luna://com.webos.applicationManager/getForegroundAppInfo '{"extraInfo":true}' |
+          grep -o '"appId":"[^"]*"' | grep -v -e '"appId":"com.webos.app.livetv"' -e '"appId":""')
+    [ -z "$ids" ]
 }
 
 go_stock() {
     umount_all
-    cold_start
+    cold_start && wait_snapshot
     rm -f "$STAMP"
 }
 
@@ -94,7 +111,7 @@ cmd_on() {
     # remount: a replaced file is a new inode, and a mount keeps the old one
     umount_all
     mount_all
-    if cold_start; then
+    if cold_start && wait_snapshot; then
         pear_id > "$STAMP"
         guard start
         log "on: Pear Home up (snapshot $(cat "$STAMP"))"
@@ -134,11 +151,28 @@ cmd_boot() {
     if [ -f "$STAMP" ] && [ "$(pear_id)" = "$(cat "$STAMP")" ]; then
         log "boot: Home already carries Pear"
         guard start
+        boot_settings
+        return 0
+    fi
+    log "boot: Home is stock ($(pear_id)); rebuilding with Pear"
+    # files were mounted just above, so no remount; Pear is on screen as soon
+    # as cold_start returns, and homeguard starts watching right away
+    if cold_start; then
+        guard start
+    fi
+    # bookkeeping, off the visible path
+    if wait_snapshot; then
+        pear_id > "$STAMP"
+        log "boot: Pear Home up (snapshot $(cat "$STAMP"))"
+        # Home is an overlay; if LG left only Live TV in front, bring Home up.
+        # Don't yank the user out of an app they opened meanwhile.
+        [ "$BOOT_TO_HOME" = 1 ] && front_is_bare && open_home
     else
-        log "boot: Home is stock ($(pear_id)); rebuilding with Pear"
-        cmd_on
-        # Home is an overlay, so whatever LG opened is still beneath it
-        [ "$BOOT_TO_HOME" = 1 ] && open_home
+        log "boot: Home did not stay up with Pear; back to stock"
+        "$DIR/homeguard" stop
+        go_stock
+        touch "$OFF"
+        return 1
     fi
     boot_settings
 }

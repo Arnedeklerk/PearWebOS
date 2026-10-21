@@ -358,7 +358,10 @@ FocusScope {
                 anchors.right: parent.right
                 anchors.rightMargin: r(110)
                 anchors.baseline: dateLine.baseline
-                text: Qt.formatDateTime(home.now, home.clockFormat)
+                // Qt's "h" is 0-23 unless the format has AP, so do 12-hour by hand
+                text: home.clockFormat === "h:mm"
+                      ? ((home.now.getHours() % 12) || 12) + Qt.formatDateTime(home.now, ":mm")
+                      : Qt.formatDateTime(home.now, home.clockFormat)
                 color: "#ffffff"
                 font.family: fontManager.smart_Light.family
                 font.weight: fontManager.smart_Light.weight
