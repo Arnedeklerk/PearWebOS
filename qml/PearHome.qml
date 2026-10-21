@@ -50,6 +50,7 @@ FocusScope {
 
     readonly property string name: "@NAME@"
     readonly property string clockFormat: "@CLOCK@"
+    readonly property bool twelveHour: clockFormat === "h:mm"
 
     property var dockApps: []
     property var drawerApps: []
@@ -312,6 +313,7 @@ FocusScope {
                 // room up to the clock (which is never wider than this reserve);
                 // a long name shrinks the line to fit, then is cut short
                 readonly property real room: header.width - r(110) - r(110) - r(480)
+                                             - (home.twelveHour ? r(90) : 0)
 
                 x: r(110)
                 y: r(120)
@@ -350,16 +352,32 @@ FocusScope {
             readonly property real capRatio: 0.672
             readonly property real digitRatio: 0.682
 
+            // AM / PM in 12-hour mode: small, beside the digits, on the
+            // date's baseline (full size it would crowd the greeting)
+            Text {
+                id: ampm
+
+                visible: home.twelveHour
+                anchors.right: parent.right
+                anchors.rightMargin: r(110)
+                anchors.baseline: dateLine.baseline
+                text: home.now.getHours() < 12 ? "AM" : "PM"
+                color: "#ffffff"
+                font.family: fontManager.smart_Regular.family
+                font.weight: fontManager.smart_Regular.weight
+                font.pixelSize: r(36)
+            }
+
             Text {
                 readonly property real capTop: greetingLine.y + greetingLine.baselineOffset
                                                - header.capRatio * greetingLine.font.pixelSize
                 readonly property real span: dateLine.y + dateLine.baselineOffset - capTop
 
-                anchors.right: parent.right
-                anchors.rightMargin: r(110)
+                anchors.right: home.twelveHour ? ampm.left : parent.right
+                anchors.rightMargin: home.twelveHour ? r(14) : r(110)
                 anchors.baseline: dateLine.baseline
                 // Qt's "h" is 0-23 unless the format has AP, so do 12-hour by hand
-                text: home.clockFormat === "h:mm"
+                text: home.twelveHour
                       ? ((home.now.getHours() % 12) || 12) + Qt.formatDateTime(home.now, ":mm")
                       : Qt.formatDateTime(home.now, home.clockFormat)
                 color: "#ffffff"
