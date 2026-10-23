@@ -9,14 +9,13 @@
 //   GET  /wallpapers          {count, accents} for wallpapers/0..count.jpg
 //   GET  /weather             cached; refetched from Open-Meteo after 30 min
 //   GET  /places?name=...     towns by that name, for the weather (Open-Meteo)
-//   GET  /inputs              Live TV and the HDMI ports, from the TV
+//   GET  /inputs              Live TV and external inputs, from the TV
 //   POST /launch {id}         open an app or input
 //   POST /apply               restart Home with Pear (picks up new QML)
 //   POST /lg-home             back to LG's own Home (`pearwebos off`)
 //
 // Node 8 (what webOS 6 has): no optional chaining, no fetch.
 'use strict';
-
 var http = require('http');
 var https = require('https');
 var fs = require('fs');
@@ -28,7 +27,6 @@ var PORT = 47321;
 var LS = DIR + '/luna-send-n';
 var CONFIG = DIR + '/config.json';
 var VERSION = (function () { try { return fs.readFileSync(DIR + '/VERSION', 'utf8').trim(); } catch (e) { return '?'; } })();
-
 var DEFAULTS = {
     name: '', clock: '24', date: 'intl',
     entrance: true, quiet: true, drift: false,
@@ -38,7 +36,6 @@ var DEFAULTS = {
 };
 // settings the TV itself applies, through pear.conf and `pearwebos settings`
 var TV_KEYS = ['guard', 'boot_to_home', 'quick_start', 'no_update_prompt'];
-
 function readJson(file, fallback) {
     try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return fallback; }
 }
@@ -50,7 +47,6 @@ function config() {
     out.version = VERSION;
     return out;
 }
-
 function writeConfig(c) {
     delete c.version;
     // `pear sync` on the PC keeps settings changed here since its last sync
@@ -61,7 +57,6 @@ function writeConfig(c) {
         return k.toUpperCase() + '=' + (c[k] ? 1 : 0);
     }).join('\n') + '\n');
 }
-
 function luna(uri, payload, cb) {
     child.execFile(LS, ['-n', '1', uri, JSON.stringify(payload || {})], { timeout: 15000 }, function (err, out) {
         var reply = null;
@@ -76,7 +71,6 @@ function detached(args) {
 }
 
 // ---- weather ----
-
 var weather = { at: 0, data: null };
 var WEATHER_WORDS = [
     [[0], 'Clear'], [[1], 'Mostly clear'], [[2], 'Partly cloudy'], [[3], 'Cloudy'],
@@ -89,7 +83,6 @@ function words(code) {
         if (WEATHER_WORDS[i][0].indexOf(code) > -1) return WEATHER_WORDS[i][1];
     return '';
 }
-
 function getWeather(cb) {
     var w = config().weather || {};
     if (!w.on || w.lat === null || w.lon === null) return cb(null);
@@ -111,7 +104,6 @@ function getWeather(cb) {
         });
     }).on('error', function () { cb(weather.data); });
 }
-
 function places(name, cb) {
     var url = 'https://geocoding-api.open-meteo.com/v1/search?count=6&name=' + encodeURIComponent(name);
     https.get(url, function (res) {
@@ -123,7 +115,7 @@ function places(name, cb) {
                 (JSON.parse(body).results || []).forEach(function (r) {
                     out.push({
                         place: [r.name, r.country].filter(Boolean).join(', '),
-                        // the county or state, to tell the Cambridges apart
+                        // the county or state, to tell the towns apart
                         region: r.admin1 || '',
                         lat: Math.round(r.latitude * 1000) / 1000,
                         lon: Math.round(r.longitude * 1000) / 1000
@@ -134,22 +126,22 @@ function places(name, cb) {
         });
     }).on('error', function () { cb(null); });
 }
-
 // ---- inputs ----
 
 function inputs(cb) {
     luna('luna://com.webos.service.eim/getAllInputStatus', {}, function (r) {
         var list = [{ id: 'com.webos.app.livetv', label: 'Live TV', plugged: true }];
         ((r && r.devices) || []).forEach(function (d) {
-            if (!/^HDMI|^AV|^COMP/.test(d.id || '')) return;
-            list.push({ id: d.appId, label: d.label, plugged: !!d.hdmiPlugIn });
+            if (!d || !/^HDMI|^AV|^COMP/.test(d.id || '')) return;
+            // Keep the app ID for existing input-panel behaviour, and expose
+            // the actual EIM input ID separately for tv/switchInput.
+            list.push({ id: d.appId, inputId: d.id, label: d.label || d.id, plugged: !!d.hdmiPlugIn });
         });
         cb(list);
     });
 }
 
 // ---- HTTP ----
-
 function send(res, code, obj) {
     res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(obj));
@@ -160,7 +152,6 @@ function body(req, cb) {
     req.on('data', function (d) { b += d; if (b.length > 65536) req.destroy(); });
     req.on('end', function () { try { cb(JSON.parse(b || '{}')); } catch (e) { cb(null); } });
 }
-
 http.createServer(function (req, res) {
     var url = req.url.split('?')[0];
     if (req.method === 'GET' && url === '/config') return send(res, 200, config());
@@ -173,7 +164,6 @@ http.createServer(function (req, res) {
         return places(name, function (l) { send(res, l ? 200 : 502, l || { error: 'offline' }); });
     }
     if (req.method !== 'POST') return send(res, 404, { error: 'not found' });
-
     body(req, function (b) {
         if (b === null) return send(res, 400, { error: 'bad JSON' });
         if (url === '/config') {
@@ -188,10 +178,38 @@ http.createServer(function (req, res) {
             if (tvChanged) detached(['settings']);
             return send(res, 200, config());
         }
-        if (url === '/launch' && typeof b.id === 'string')
+        if (url === '/launch' && typeof b.id === 'string') {
+            // Only switch to input IDs discovered by EIM. Do not pass arbitrary
+            // input IDs from the request directly to the TV service.
+            if (typeof b.inputId === 'string') {
+                return inputs(function (list) {
+                    var found = null;
+                    for (var i = 0; i < list.length; i++) {
+                        if (list[i].inputId === b.inputId && /^HDMI/i.test(list[i].inputId)) {
+                            found = list[i];
+                            break;
+                        }
+                    }
+                    if (!found) return send(res, 400, { ok: false, error: 'unknown HDMI input' });
+                    // Launch the TV's own HDMI launch point first. This is the
+                    // same path LG's Home launcher uses for named HDMI inputs.
+                    // Some firmware versions do not expose EIM switchInput to
+                    // this caller, so fall back to switchInput if launch fails.
+                    return luna('luna://com.webos.applicationManager/launch', { id: found.id }, function (launchReply) {
+                        if (launchReply && launchReply.returnValue) {
+                            return send(res, 200, { ok: true, method: 'launch', response: launchReply });
+                        }
+                        return luna('luna://com.webos.service.eim/switchInput', { inputId: found.inputId }, function (switchReply) {
+                            var ok = !!(switchReply && switchReply.returnValue);
+                            send(res, ok ? 200 : 502, { ok: ok, method: 'switchInput', launchResponse: launchReply || {}, response: switchReply || {} });
+                        });
+                    });
+                });
+            }
             return luna('luna://com.webos.applicationManager/launch', { id: b.id }, function (r) {
                 send(res, 200, { ok: !!(r && r.returnValue) });
             });
+        }
         if (url === '/apply') { send(res, 200, { ok: true }); return detached(['on']); }
         if (url === '/lg-home') { send(res, 200, { ok: true }); return detached(['off']); }
         send(res, 404, { error: 'not found' });
