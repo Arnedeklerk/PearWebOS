@@ -25,6 +25,11 @@ END = object()
 PEAR_FILES = {
     "UserInterfaceLayer/Containers/Main/GradationBG.qml": "PearHome.qml",
     "UserInterfaceLayer/Containers/Main/RecentBG.qml": "PearBackdrop.qml",
+    "UserInterfaceLayer/Containers/Main/EditTile.qml": "PearPanel.qml",
+    "UserInterfaceLayer/Containers/Main/RecentTitle.qml": "PearInputs.qml",
+    "UserInterfaceLayer/Containers/Main/PromotionBG.qml": "PearSettings.qml",
+    "UserInterfaceLayer/Containers/Main/AIBoardIntro.qml": "PearTopBar.qml",
+    "UserInterfaceLayer/Containers/Main/AdLoadingImage.qml": "PearTile.qml",
 }
 
 LOADER = '''    // PearWebOS: an Apple TV style Home over LG's (which stays loaded beneath it)

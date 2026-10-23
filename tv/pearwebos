@@ -66,6 +66,19 @@ open_home() { $LS -n 1 luna://com.webos.applicationManager/launch '{"id":"com.we
 
 guard() { [ "$GUARD" = 1 ] && "$DIR/homeguard" "$1"; }
 
+# peard: what Pear's Home asks for settings, photos, inputs and weather
+peard() {
+    case "$1" in
+        start)
+            peard stop
+            setsid node "$DIR/peard.js" </dev/null >>"$DIR/peard.log" 2>&1 &
+            echo $! > "$DIR/peard.pid" ;;
+        stop)
+            [ -f "$DIR/peard.pid" ] && kill "$(cat "$DIR/peard.pid")" 2>/dev/null
+            rm -f "$DIR/peard.pid" ;;
+    esac
+}
+
 # Throw away the snapshot and start Home from its files. Returns as soon as
 # the new Home is running: every second here is a second of stock Home on
 # screen. Non-zero if none came up within 10 s.
@@ -107,6 +120,7 @@ go_stock() {
 
 cmd_on() {
     rm -f "$OFF"
+    peard start
     # remount: a replaced file is a new inode, and a mount keeps the old one
     umount_all
     mount_all
@@ -124,6 +138,7 @@ cmd_on() {
 
 cmd_off() {
     touch "$OFF"
+    peard stop
     "$DIR/homeguard" stop
     go_stock
     log "off: stock Home"
@@ -146,6 +161,7 @@ boot_settings() {
 cmd_boot() {
     [ -f "$OFF" ] && { log "boot: off"; return 0; }
     mount_all
+    peard start
     # Pear first, so the stock Home is on screen as briefly as possible
     if [ -f "$STAMP" ] && [ "$(pear_id)" = "$(cat "$STAMP")" ]; then
         log "boot: Home already carries Pear"

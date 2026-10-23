@@ -2,42 +2,32 @@
 """pear: install and manage PearWebOS on a rooted LG webOS TV.
 
     ./pear setup       find the TV, ask a few questions, install
-    ./pear sync        rebuild and push after changing photos or settings
-    ./pear status      what is mounted and running on the TV
+    ./pear sync        push changed photos, settings and code (restarts Home only for code)
+    ./pear photos      push the photos in photos/ (no restart)
+    ./pear update      get the latest PearWebOS and put it on the TV
+    ./pear status      what's running on the TV, and its version
     ./pear on | off    Pear Home, or LG's own Home
     ./pear shot        save a screenshot of the TV to docs/screenshot.jpg
     ./pear uninstall   remove PearWebOS from the TV
+
+Most settings can also be changed on the TV: the cog at the top right of Home.
 """
-import io
 import json
 import os
-import socket
 import subprocess
 import sys
-import tarfile
-import tempfile
-from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "installer"))
 
-CONF = os.path.join(HERE, ".pear.json")
-CACHE = os.path.join(HERE, ".cache")
-TV_DIR = "/var/lib/pearwebos"
-# early in the startup hooks, so a full boot shows stock Home as briefly as can be
-HOOK = "/var/lib/webosbrew/init.d/05-pearwebos"
-OLD_HOOKS = ["/var/lib/webosbrew/init.d/60-pearwebos"]
-# Windows runs this as `python3 pear`; messages say so
-WINDOWS = os.name == "nt"
-PEAR = "python3 pear" if WINDOWS else "./pear"
+import install  # noqa: E402
+from remote import HOOK, OLD_HOOKS, PEAR, TV_DIR, find_tvs, preflight, pull, ssh  # noqa: E402
 
-# the line under the greeting: (key, Qt format, add "th"/"st"/..., example)
-DATE_STYLES = [
-    ("intl", "dddd d MMMM", False, "Tuesday 20 October"),
-    ("us", "dddd, MMMM d", False, "Tuesday, October 20"),
-    ("short", "ddd, MMM d", False, "Tue, Oct 20"),
-    ("ordinal", "ddd, MMM d", True, "Tue, Oct 20th"),
-]
+CONF = os.path.join(HERE, ".pear.json")
+
+# the line under the greeting (the same styles as in PearHome.qml)
+DATE_STYLES = [("intl", "Tuesday 20 October"), ("us", "Tuesday, October 20"),
+               ("short", "Tue, Oct 20"), ("ordinal", "Tue, Oct 20th")]
 # small touches, asked in setup: (key, question)
 TOUCHES = [
     ("entrance", "Greeting and dock rise in when Home appears?"),
@@ -45,63 +35,13 @@ TOUCHES = [
     ("drift", "Photo slowly zooms in and out (keeps the TV redrawing; can stutter on some sets)?"),
 ]
 DEFAULTS = {"tv": "", "name": "", "clock": "24", "date": "intl", "wallpaper_quality": "light",
-            "entrance": True, "quiet": True, "drift": False, "guard": True,
-            "boot_to_home": True, "quick_start": True, "no_update_prompt": True}
+            "entrance": True, "quiet": True, "drift": False, "hidden": None,
+            "weather": {"on": False, "place": "", "lat": None, "lon": None, "units": "c"},
+            "guard": True, "boot_to_home": True, "quick_start": True, "no_update_prompt": True}
 
-
-# ---- talking to the TV ----
-
-def ssh(conf, cmd, check=True, capture=True, stdin=None):
-    r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
-                        f"root@{conf['tv']}", cmd],
-                       input=stdin, capture_output=capture, check=False)
-    if check and r.returncode != 0:
-        err = (r.stderr or b"").decode(errors="replace").strip()
-        sys.exit(f"On the TV, `{cmd.splitlines()[0][:60]}` failed: {err or r.returncode}")
-    return (r.stdout or b"").decode(errors="replace")
-
-
-def pull(conf, remote, local):
-    os.makedirs(os.path.dirname(local), exist_ok=True)
-    r = subprocess.run(["scp", "-q", "-o", "BatchMode=yes", f"root@{conf['tv']}:{remote}", local])
-    if r.returncode != 0:
-        sys.exit(f"Could not copy {remote} from the TV.")
-
-
-def find_tvs():
-    """webOS TVs on this machine's /24: they answer on port 3000."""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("192.0.2.1", 80))
-        me = s.getsockname()[0]
-        s.close()
-    except OSError:
-        return []
-    base = me.rsplit(".", 1)[0]
-
-    def probe(i):
-        ip = f"{base}.{i}"
-        if ip == me:
-            return None
-        try:
-            with socket.create_connection((ip, 3000), timeout=0.6):
-                pass
-        except OSError:
-            return None
-        try:
-            with socket.create_connection((ip, 22), timeout=0.6):
-                return (ip, True)
-        except OSError:
-            return (ip, False)
-
-    with ThreadPoolExecutor(64) as ex:
-        return [r for r in ex.map(probe, range(1, 255)) if r]
-
-
-# ---- config ----
 
 def load():
-    conf = dict(DEFAULTS)
+    conf = json.loads(json.dumps(DEFAULTS))
     if os.path.exists(CONF):
         with open(CONF) as f:
             conf.update(json.load(f))
@@ -123,103 +63,28 @@ def ask(prompt, default):
 
 def ask_date(current):
     print("  Date style:")
-    for i, (_, _, _, example) in enumerate(DATE_STYLES, 1):
+    for i, (_, example) in enumerate(DATE_STYLES, 1):
         print(f"    {i}. {example}")
     keys = [d[0] for d in DATE_STYLES]
     a = ask("Which one", str(keys.index(current) + 1) if current in keys else "1")
     return keys[int(a) - 1] if a.isdigit() and 1 <= int(a) <= len(keys) else (a if a in keys else keys[0])
 
 
-# ---- building and installing ----
-
-def build_and_push(conf):
-    try:
-        import numpy  # noqa: F401
-        from PIL import Image  # noqa: F401
-    except ImportError:
-        sys.exit("PearWebOS needs Pillow and numpy on this computer:\n"
-                 "  python3 -m pip install --user pillow numpy")
-    import patch_home
-    import wallpapers
-
-    print("Copying LG Home's files from the TV (they stay on your machine)...")
-    # with Pear installed, its own copies are mounted over LG's; take them off
-    # first (Home keeps running: it read its files when it started)
-    ssh(conf, f"[ -x {TV_DIR}/pearwebos ] && {TV_DIR}/pearwebos unmount; true")
-    stock = os.path.join(CACHE, "stock")
-    for rel in patch_home.NEEDED:
-        pull(conf, f"{patch_home.APP}/{rel}", os.path.join(stock, rel))
-        with open(os.path.join(stock, rel), encoding="utf-8", errors="replace") as f:
-            text = f.read()
-            if "skinHome" in text or "PearWebOS" in text:
-                sys.exit(f"{rel} on the TV is still Pear's copy, not LG's. Run {PEAR} off, then try again.")
-
-    with tempfile.TemporaryDirectory() as tmp:
-        print("Building wallpapers from photos/ ...")
-        accents = wallpapers.build(os.path.join(HERE, "photos"), os.path.join(tmp, "wallpapers"),
-                                   conf["wallpaper_quality"])
-        print("Patching LG Home...")
-        _, date_format, ordinal, _ = next((d for d in DATE_STYLES if d[0] == conf["date"]), DATE_STYLES[0])
-        patch_home.build(stock, os.path.join(tmp, "files"), os.path.join(HERE, "qml"), {
-            "NAME": json.dumps(conf["name"])[1:-1],
-            "CLOCK": "12" if "12" in str(conf["clock"]) else "24",
-            "DATE": date_format,
-            "DATE_ORDINAL": "true" if ordinal else "false",
-            **{key.upper(): "true" if conf[key] else "false" for key, _ in TOUCHES},
-            "WALLPAPERS": str(len(accents) - 1),
-            "ACCENTS": json.dumps(accents),
-        })
-        with open(os.path.join(tmp, "pear.conf"), "w", newline="\n") as f:
-            for key in ("guard", "boot_to_home", "quick_start", "no_update_prompt"):
-                f.write(f"{key.upper()}={1 if conf[key] else 0}\n")
-
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w") as tar:
-            for sub in ("files", "wallpapers", "pear.conf"):
-                tar.add(os.path.join(tmp, sub), arcname=sub)
-            for script in ("pearwebos", "homeguard", "luna-send-n", "tvkey.js"):
-                # LF only, whatever the checkout did: "#!/bin/sh\r" is "not found"
-                with open(os.path.join(HERE, "tv", script), "rb") as f:
-                    data = f.read().replace(b"\r\n", b"\n")
-                info = tarfile.TarInfo(script)
-                info.size, info.mode = len(data), 0o755
-                tar.addfile(info, io.BytesIO(data))
-
-    print("Installing on the TV...")
-    ssh(conf, f"mkdir -p {TV_DIR} && cd {TV_DIR} && {{ [ -x ./pearwebos ] && ./pearwebos unmount; true; }} && "
-              "rm -rf files wallpapers && tar xf -", stdin=buf.getvalue())
-    # in the background, so a slow boot neither holds up nor waits on other hooks
-    ssh(conf, f"rm -f {' '.join(OLD_HOOKS)}; printf '#!/bin/sh\\n# PearWebOS\\n"
-              f"setsid {TV_DIR}/pearwebos boot </dev/null >/dev/null 2>&1 &\\n' > {HOOK} && chmod 755 {HOOK}")
-    print("Starting Pear Home (about 15 seconds)...")
-    out = ssh(conf, f"{TV_DIR}/pearwebos on 2>&1 | tail -1; {TV_DIR}/pearwebos settings; true")
-    print("  " + out.strip())
-
-
-def copy_key_command(tv):
-    """Putting this computer's SSH key on the TV; Windows has no ssh-copy-id."""
-    if not WINDOWS:
-        return f"ssh-copy-id root@{tv}"
-    return (f"type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh root@{tv} "
-            '"mkdir -p /home/root/.ssh && cat >> /home/root/.ssh/authorized_keys"')
-
-
-def preflight(conf):
-    if not conf["tv"]:
-        sys.exit(f"No TV yet: run {PEAR} setup")
-    try:
-        socket.create_connection((conf["tv"], 22), timeout=5).close()
-    except OSError:
-        sys.exit(f"Can't reach the TV at {conf['tv']}. Is it on, and is SSH on in Homebrew Channel?")
-    if subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", f"root@{conf['tv']}", "true"],
-                      capture_output=True).returncode != 0:
-        sys.exit(f"Can't log into root@{conf['tv']} with an SSH key.\n"
-                 "  1. In Homebrew Channel, open Settings and turn on SSH Server.\n"
-                 "  2. Copy your key to the TV (the default password is alpine):\n"
-                 f"       {copy_key_command(conf['tv'])}\n"
-                 f"  Then run {PEAR} setup again.")
-    if ssh(conf, "[ -d /var/lib/webosbrew/init.d ] && echo ok", check=False).strip() != "ok":
-        sys.exit("This TV has no Homebrew Channel startup hooks (/var/lib/webosbrew/init.d). Is it rooted?")
+def ask_weather(w):
+    w = dict(w)
+    w["on"] = ask("Show the weather by the date (from Open-Meteo, free)?", bool(w.get("on")))
+    if not w["on"]:
+        return w
+    while True:
+        town = ask("Town or city", w.get("place") or "")
+        hit = install.find_place(town) if town else None
+        if hit:
+            print(f"    Found {hit['place']}.")
+            w.update(hit)
+            break
+        print("    Couldn't find that one (or no internet); try another spelling.")
+    w["units"] = "f" if ask("Celsius or Fahrenheit", "C" if w.get("units") != "f" else "F").lower().startswith("f") else "c"
+    return w
 
 
 # ---- commands ----
@@ -238,11 +103,14 @@ def cmd_setup():
     release = ssh(conf, "grep -o '\"webos_release\": *\"[^\"]*\"' /var/run/nyx/os_info.json | cut -d'\"' -f4", check=False).strip()
     print(f"  Connected. webOS {release or '?'}" + ("" if release.startswith("6.") else
           "  (Pear is tested on webOS 6; on other versions it may refuse, safely)"))
+    # answers changed on the TV become this run's defaults
+    install.merge_from_tv(conf)
 
     print()
     conf["name"] = ask('Name for the greeting ("Good evening, ___"; blank for none)', conf["name"])
     conf["clock"] = "12" if "12" in ask("Clock: 24 or 12 hour", conf["clock"]) else "24"
     conf["date"] = ask_date(conf["date"])
+    conf["weather"] = ask_weather(conf["weather"])
     q = ask("Photo quality: light (1600x900, lightest on the TV) or high (1920x1080, the most Home can show)",
             conf["wallpaper_quality"]).lower()
     conf["wallpaper_quality"] = "high" if q.startswith("h") else "light"
@@ -252,16 +120,43 @@ def cmd_setup():
     conf["boot_to_home"] = ask("Power on straight to Home?", conf["boot_to_home"])
     conf["quick_start"] = ask("Turn on Quick Start+ (power-on resumes Pear instantly)?", conf["quick_start"])
     conf["no_update_prompt"] = ask('Hide LG\'s "new software, update now?" prompt (an update can remove root)?', conf["no_update_prompt"])
-    save(conf)
     print()
-    build_and_push(conf)
-    print(f"\nDone. Put photos in photos/ and run {PEAR} sync to use them as backgrounds.")
+    install.sync(conf, force=True)
+    save(conf)
+    print(f"\nDone. Put photos in photos/ and run {PEAR} photos to use them as backgrounds.\n"
+          "Most settings can be changed on the TV too: the cog at the top right of Home.")
 
 
 def cmd_sync():
     conf = load()
     preflight(conf)
-    build_and_push(conf)
+    install.sync(conf)
+    save(conf)
+
+
+def cmd_photos():
+    conf = load()
+    preflight(conf)
+    install.push_photos(conf)
+    print("Done: Home picks them up within a minute.")
+
+
+def cmd_update():
+    r = subprocess.run(["git", "-C", HERE, "pull", "--ff-only"])
+    if r.returncode != 0:
+        sys.exit("Couldn't update this copy (local changes?). Nothing was sent to the TV.")
+    # a fresh interpreter, so the new code does the syncing
+    os.execv(sys.executable, [sys.executable, os.path.join(HERE, "pear"), "sync"])
+
+
+def cmd_status():
+    conf = load()
+    preflight(conf)
+    print(ssh(conf, f"{TV_DIR}/pearwebos status 2>&1", check=False).rstrip())
+    on_tv = ssh(conf, f"cat {TV_DIR}/VERSION 2>/dev/null", check=False).strip() or "?"
+    here = install.version()
+    print(f"version: {on_tv} on the TV, {here} here" +
+          ("" if on_tv == here else f"  (run {PEAR} sync to update the TV)"))
 
 
 def cmd_simple(arg):
@@ -292,8 +187,9 @@ def cmd_uninstall():
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "help"
     try:
-        {"setup": cmd_setup, "sync": cmd_sync, "shot": cmd_shot, "uninstall": cmd_uninstall,
-         "status": lambda: cmd_simple("status"), "on": lambda: cmd_simple("on"),
-         "off": lambda: cmd_simple("off")}.get(cmd, lambda: print(__doc__.replace("./pear", PEAR)))()
+        {"setup": cmd_setup, "sync": cmd_sync, "photos": cmd_photos, "update": cmd_update,
+         "status": cmd_status, "shot": cmd_shot, "uninstall": cmd_uninstall,
+         "on": lambda: cmd_simple("on"), "off": lambda: cmd_simple("off")
+         }.get(cmd, lambda: print(__doc__.replace("./pear", PEAR)))()
     except KeyboardInterrupt:
         print()

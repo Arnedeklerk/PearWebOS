@@ -1,0 +1,23 @@
+name: check
+
+# Everything that can be checked without a TV: Python, the TV's scripts, and
+# Pear's QML compiled in Qt 5 the way the TV loads it (installer/check.py).
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Qt's runtime libraries
+        run: sudo apt-get update -q && sudo apt-get install -yq libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - run: pip install PyQt5 pillow numpy
+      - run: python installer/check.py

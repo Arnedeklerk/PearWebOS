@@ -7,8 +7,9 @@
  * Edit Home still decides the order; hold OK on a tile to open it.
  *
  * Mounted over Main/GradationBG.qml, which LG Home never loads, and loaded
- * by MainView.qml on top of LG's own views. Words in @CAPS@ are filled in by
- * the installer from your setup.
+ * by MainView.qml on top of LG's own views. Its settings and photo list come
+ * from peard (tv/peard.js) at runtime; the installer bakes in the values it
+ * had, for the moment before peard answers.
  */
 
 import QtQuick 2.12
@@ -20,6 +21,10 @@ FocusScope {
 
     focus: true
 
+    // what Pear's other files are given as their `home` (`home: home` inside
+    // one of them would bind its own, empty, property to itself)
+    readonly property Item pearHome: home
+
     readonly property real s: width / 1920
     function r(v) { return Math.round(v * s); }
 
@@ -27,12 +32,73 @@ FocusScope {
     readonly property int tileW: r(262)
     readonly property int tileH: r(158)
     readonly property int gapX: r(38)
+    // ---- settings and photos, from peard (tv/peard.js) on the TV ----
+
+    // what the installer baked in, used until (or unless) peard answers
+    property var config: @CONFIG@
+    property var photos: @PHOTOS@
+
+    readonly property string peard: "http://127.0.0.1:47321"
+
+    function api(method, path, data, done) {
+        var x = new XMLHttpRequest();
+        x.onreadystatechange = function () {
+            if (x.readyState !== XMLHttpRequest.DONE) return;
+            var reply = null;
+            try { reply = JSON.parse(x.responseText); } catch (e) { }
+            if (done) done(x.status === 200 ? reply : null);
+        };
+        x.open(method, peard + path);
+        if (data) x.setRequestHeader("Content-Type", "application/json");
+        x.send(data ? JSON.stringify(data) : null);
+    }
+
+    // settings changed on the TV or pushed from a computer, and new photos,
+    // without restarting Home
+    function refresh() {
+        api("GET", "/config", null, function (c) { if (c) config = c; });
+        api("GET", "/wallpapers", null, function (w) { if (w && w.accents) photos = w; });
+        api("GET", "/weather", null, function (w) { weather = w && w.temp !== undefined ? w : null; });
+    }
+
+    function save(changes) {
+        api("POST", "/config", changes, function (c) { if (c) config = c; });
+    }
+
+    // the line under the greeting: Qt formats can't say "20th", so that's added
+    readonly property var dateStyles: [
+        { key: "intl", format: "dddd d MMMM", ordinal: false, example: "Tuesday 20 October" },
+        { key: "us", format: "dddd, MMMM d", ordinal: false, example: "Tuesday, October 20" },
+        { key: "short", format: "ddd, MMM d", ordinal: false, example: "Tue, Oct 20" },
+        { key: "ordinal", format: "ddd, MMM d", ordinal: true, example: "Tue, Oct 20th" }
+    ]
+    readonly property var dateStyle: {
+        for (var i = 0; i < dateStyles.length; i++) if (dateStyles[i].key === config.date) return dateStyles[i];
+        return dateStyles[0];
+    }
+
+    readonly property string name: config.name || ""
+    readonly property bool twelveHour: String(config.clock) === "12"
+    readonly property string dateFormat: dateStyle.format
+    readonly property bool dateOrdinal: dateStyle.ordinal
+    readonly property bool optEntrance: config.entrance !== false  // the page rises in when Home appears
+    readonly property bool optDrift: config.drift === true         // the photo slowly zooms in and out
+    readonly property bool optQuiet: config.quiet !== false        // untouched a while, the dock fades away
+
     // date colour for each background: [the dusk landscape, photo 1, 2, ...]
-    readonly property var accents: @ACCENTS@
+    readonly property var accents: photos.accents || ["#e9a77f"]
     readonly property string accent: accents[wallpaper] || accents[0]
 
-    // LG promotions and homebrew background tools; never shown as tiles
-    readonly property var hiddenApps: [
+    // your photos, /var/lib/pearwebos/wallpapers/1.jpg .. N.jpg (0.jpg is the
+    // dusk landscape); a new one each time Home comes back after a while
+    readonly property int wallpaperCount: photos.count || 0
+    readonly property int wallpaperAfter: 15 * 60 * 1000
+    property int wallpaper: 0
+    property double hiddenAt: 0
+
+    // LG promotions and homebrew background tools: off the tiles unless the
+    // settings say otherwise
+    readonly property var defaultHidden: [
         "lgchannels.uk", "com.webos.app.lgchannels", "com.webos.app.homeconnect",
         "com.webos.app.sportsteamsettings", "com.lgshop.app35", "com.lgtravel.app",
         "epoxyaisports", "com.lgtvod.app", "webos.day", "com.twin.app.audiochannel",
@@ -40,23 +106,11 @@ FocusScope {
         "org.webosbrew.inputhook", "org.aabytt.webos.custom-screensaver-aerial",
         "com.amazoff.patcher"
     ]
+    readonly property var hiddenApps: config.hidden || defaultHidden
+    onHiddenAppsChanged: rebuildTimer.restart()
 
-    // your photos, /var/lib/pearwebos/wallpapers/1.jpg .. N.jpg (0.jpg is the
-    // dusk landscape); a new one each time Home comes back after a while
-    readonly property int wallpaperCount: @WALLPAPERS@
-    readonly property int wallpaperAfter: 15 * 60 * 1000
-    property int wallpaper: 0
-    property double hiddenAt: 0
+    property var weather: null
 
-    readonly property string name: "@NAME@"
-    readonly property bool twelveHour: "@CLOCK@" === "12"
-    readonly property string dateFormat: "@DATE@"
-    readonly property bool dateOrdinal: @DATE_ORDINAL@
-
-    // touches chosen in setup
-    readonly property bool optEntrance: @ENTRANCE@  // the page rises in when Home appears
-    readonly property bool optDrift: @DRIFT@        // the photo slowly zooms in and out
-    readonly property bool optQuiet: @QUIET@        // untouched a while, the dock fades away
     readonly property int quietAfter: 45 * 1000
 
     // Qt's "h" is still 24-hour unless AM/PM is shown, so 12-hour is made here
@@ -117,12 +171,13 @@ FocusScope {
 
     // focus the tile we were on, whichever part of LG last held focus
     function takeFocus() {
+        if (panelOpen) return;
         forceActiveFocus();
         (drawer ? grid : dockList).forceActiveFocus();
     }
 
     function pickWallpaper() {
-        if (wallpaperCount < 1) return;
+        if (wallpaperCount < 1) { wallpaper = 0; return; }
         // Date.now() in the mix: a restored snapshot replays Math.random()
         var n;
         do {
@@ -140,7 +195,11 @@ FocusScope {
     Component.onCompleted: {
         rebuild();
         pickWallpaper();
+        refresh();
     }
+
+    // a new photo list: keep the photo if it's still there, else pick again
+    onWallpaperCountChanged: if (wallpaper === 0 || wallpaper > wallpaperCount) pickWallpaper()
 
     Connections {
         target: uiController
@@ -148,6 +207,8 @@ FocusScope {
         onHomeShownChanged: {
             home.quiet = false;
             if (!uiController.homeShown) {
+                inputsPanel.close();
+                settingsPanel.close();
                 home.hiddenAt = Date.now();
                 return;
             }
@@ -173,9 +234,11 @@ FocusScope {
 
     // the clock moves on the minute, not every few seconds (and catches up
     // whenever Home comes back, in case the TV slept)
+    // (and checks peard for new settings, photos and weather while it's at it)
     function tick() {
         now = new Date();
         clock.interval = 60050 - (now.getSeconds() * 1000 + now.getMilliseconds());
+        refresh();
     }
 
     Timer {
@@ -209,7 +272,7 @@ FocusScope {
     Timer {
         id: idle
         interval: home.quietAfter
-        running: home.optQuiet && !home.quiet && !home.drawer && uiController.homeShown
+        running: home.optQuiet && !home.quiet && !home.drawer && !home.panelOpen && uiController.homeShown
         onTriggered: {
             home.quiet = true;
             // park focus where no list can take the next key, so the first
@@ -443,7 +506,8 @@ FocusScope {
                 x: r(110)
                 anchors.top: greetingLine.bottom
                 anchors.topMargin: r(10)
-                text: home.dateText()
+                // with the weather after it, when it's on
+                text: home.dateText() + (home.weather ? "   ·   " + home.weather.temp + "°  " + home.weather.words : "")
                 color: home.accent
                 font.family: fontManager.smart_Regular.family
                 font.weight: fontManager.smart_Regular.weight
@@ -487,6 +551,18 @@ FocusScope {
             }
         }
 
+        // Inputs and Settings, top right above the clock: Up from the dock
+        // (PearTopBar.qml, mounted over Main/AIBoardIntro.qml)
+        AIBoardIntro {
+            id: topBar
+            home: pearHome
+            anchors.right: parent.right
+            anchors.rightMargin: r(110)
+            y: r(36)
+            onOpen: key === "inputs" ? inputsPanel.show() : settingsPanel.show()
+            onDown: dockList.forceActiveFocus()
+        }
+
         // the frosted dock with the first six apps
         Rectangle {
             id: dock
@@ -523,7 +599,7 @@ FocusScope {
                     if (home.drawerApps.length) home.openDrawer();
                     else home.bump(0, 1);
                 }
-                Keys.onUpPressed: home.bump(0, -1)
+                Keys.onUpPressed: topBar.forceActiveFocus()
                 Keys.onLeftPressed: {
                     if (currentIndex > 0) event.accepted = false;
                     else home.bump(-1, 0);
@@ -646,115 +722,33 @@ FocusScope {
         }
     }
 
+    // ---- the panels: Inputs and Settings slide in from the right ----
+
+    readonly property bool panelOpen: inputsPanel.shown || settingsPanel.shown
+    readonly property Item dockView: dockList
+
+    // PearInputs.qml and PearSettings.qml, mounted over Main/RecentTitle.qml and
+    // Main/PromotionBG.qml
+    RecentTitle {
+        id: inputsPanel
+        home: pearHome
+        z: 10
+        onClosed: topBar.forceActiveFocus()
+    }
+
+    PromotionBG {
+        id: settingsPanel
+        home: pearHome
+        z: 10
+        onClosed: topBar.forceActiveFocus()
+    }
+
     // ---- one tile: the app's colour, its icon, a lift and a title when focused ----
 
+    // PearTile.qml, mounted over Main/AdLoadingImage.qml
     Component {
         id: tile
-
-        Item {
-            id: t
-
-            property Item view: ListView.view ? ListView.view : GridView.view
-            property var app: modelData
-            property bool focused: view !== null && view.activeFocus && view.currentIndex === index
-
-            width: home.tileW
-            height: home.tileH
-            z: focused ? 2 : 1
-            // a bump moves the focused tile, its glow and its name together
-            transform: Translate {
-                x: t.focused ? home.bumpX : 0
-                y: t.focused ? home.bumpY : 0
-            }
-
-            // the pointer: hover picks the tile, a click opens it, a long
-            // press opens Edit App List (as holding OK does)
-            MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                // the drawer's tiles only while it is open; with it open, the
-                // dock still takes clicks but not hover (that would close it)
-                enabled: t.view === dockList || home.drawer
-                onEntered: {
-                    home.poke();
-                    if (t.view === dockList && home.drawer) return;
-                    t.view.currentIndex = index;
-                    t.view.forceActiveFocus();
-                }
-                onClicked: home.launch(t.app)
-                onPressAndHold: uiController.startEdit("app")
-            }
-
-            RectangularGlow {
-                // drawn once and reused: scale and opacity don't redraw it
-                cached: true
-                anchors.fill: card
-                anchors.topMargin: home.r(14)
-                glowRadius: home.r(26)
-                spread: 0.15
-                cornerRadius: card.radius + glowRadius
-                color: Qt.rgba(0, 0, 0, 0.55)
-                opacity: t.focused ? 1 : 0
-                scale: card.scale
-                Behavior on opacity { NumberAnimation { duration: 160 } }
-            }
-
-            Rectangle {
-                id: card
-
-                anchors.fill: parent
-                radius: home.r(26)
-                color: t.app && t.app.iconColor ? t.app.iconColor : "#2b2a40"
-                scale: t.focused ? 1.14 : 1
-                antialiasing: true
-                Behavior on scale { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
-
-                // decoded at its own size and never drawn larger: a 130 px icon
-                // shows pixel for pixel, a 192 px one scales down crisply
-                Image {
-                    anchors.centerIn: parent
-                    height: Math.min(parent.height * 0.94, implicitHeight > 0 ? implicitHeight * home.s : parent.height * 0.94)
-                    width: height
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                    mipmap: true
-                    asynchronous: true
-                    source: !t.app ? "" : (t.app.extraLargeIcon || t.app.largeIcon || t.app.icon || "")
-                }
-
-                // a soft sheen, brighter on the focused tile
-                Rectangle {
-                    anchors.fill: parent
-                    radius: parent.radius
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, t.focused ? 0.20 : 0.07) }
-                        GradientStop { position: 0.55; color: Qt.rgba(1, 1, 1, 0) }
-                    }
-                    border.color: Qt.rgba(1, 1, 1, t.focused ? 0.0 : 0.10)
-                    border.width: Math.max(1, home.r(1))
-                }
-            }
-
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.bottom
-                anchors.topMargin: t.view === dockList ? home.r(34 + 16) : home.r(24)
-                width: parent.width * 1.3
-                horizontalAlignment: Text.AlignHCenter
-                elide: Text.ElideRight
-                text: t.app ? t.app.title : ""
-                color: "#ffffff"
-                opacity: t.focused ? 1 : 0
-                font.family: fontManager.smart_SemiBold.family
-                font.weight: fontManager.smart_SemiBold.weight
-                font.pixelSize: home.r(26)
-                Behavior on opacity { NumberAnimation { duration: 160 } }
-                // rises into place as it fades in
-                transform: Translate {
-                    y: t.focused ? 0 : home.r(8)
-                    Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                }
-            }
-        }
+        AdLoadingImage { home: pearHome; app: modelData; idx: index }
     }
+
 }
