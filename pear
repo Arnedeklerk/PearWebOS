@@ -24,8 +24,28 @@ sys.path.insert(0, os.path.join(HERE, "installer"))
 CONF = os.path.join(HERE, ".pear.json")
 CACHE = os.path.join(HERE, ".cache")
 TV_DIR = "/var/lib/pearwebos"
-HOOK = "/var/lib/webosbrew/init.d/60-pearwebos"
-DEFAULTS = {"tv": "", "name": "", "clock": "24", "wallpaper_quality": "light", "guard": True,
+# early in the startup hooks, so a full boot shows stock Home as briefly as can be
+HOOK = "/var/lib/webosbrew/init.d/05-pearwebos"
+OLD_HOOKS = ["/var/lib/webosbrew/init.d/60-pearwebos"]
+# Windows runs this as `python3 pear`; messages say so
+WINDOWS = os.name == "nt"
+PEAR = "python3 pear" if WINDOWS else "./pear"
+
+# the line under the greeting: (key, Qt format, add "th"/"st"/..., example)
+DATE_STYLES = [
+    ("intl", "dddd d MMMM", False, "Tuesday 20 October"),
+    ("us", "dddd, MMMM d", False, "Tuesday, October 20"),
+    ("short", "ddd, MMM d", False, "Tue, Oct 20"),
+    ("ordinal", "ddd, MMM d", True, "Tue, Oct 20th"),
+]
+# small touches, asked in setup: (key, question)
+TOUCHES = [
+    ("entrance", "Greeting and dock rise in when Home appears?"),
+    ("quiet", "After 45 seconds untouched, fade the dock away and leave the photo and clock (kinder to OLEDs)?"),
+    ("drift", "Photo slowly zooms in and out (keeps the TV redrawing; can stutter on some sets)?"),
+]
+DEFAULTS = {"tv": "", "name": "", "clock": "24", "date": "intl", "wallpaper_quality": "light",
+            "entrance": True, "quiet": True, "drift": False, "guard": True,
             "boot_to_home": True, "quick_start": True, "no_update_prompt": True}
 
 
@@ -101,6 +121,15 @@ def ask(prompt, default):
     return a or default
 
 
+def ask_date(current):
+    print("  Date style:")
+    for i, (_, _, _, example) in enumerate(DATE_STYLES, 1):
+        print(f"    {i}. {example}")
+    keys = [d[0] for d in DATE_STYLES]
+    a = ask("Which one", str(keys.index(current) + 1) if current in keys else "1")
+    return keys[int(a) - 1] if a.isdigit() and 1 <= int(a) <= len(keys) else (a if a in keys else keys[0])
+
+
 # ---- building and installing ----
 
 def build_and_push(conf):
@@ -123,16 +152,20 @@ def build_and_push(conf):
         with open(os.path.join(stock, rel), encoding="utf-8", errors="replace") as f:
             text = f.read()
             if "skinHome" in text or "PearWebOS" in text:
-                sys.exit(f"{rel} on the TV is still Pear's copy, not LG's. Run ./pear off, then try again.")
+                sys.exit(f"{rel} on the TV is still Pear's copy, not LG's. Run {PEAR} off, then try again.")
 
     with tempfile.TemporaryDirectory() as tmp:
         print("Building wallpapers from photos/ ...")
         accents = wallpapers.build(os.path.join(HERE, "photos"), os.path.join(tmp, "wallpapers"),
                                    conf["wallpaper_quality"])
         print("Patching LG Home...")
-        patch_home.build(stock, os.path.join(tmp, "files"), os.path.join(HERE, "qml", "PearHome.qml"), {
+        _, date_format, ordinal, _ = next((d for d in DATE_STYLES if d[0] == conf["date"]), DATE_STYLES[0])
+        patch_home.build(stock, os.path.join(tmp, "files"), os.path.join(HERE, "qml"), {
             "NAME": json.dumps(conf["name"])[1:-1],
             "CLOCK": "12" if "12" in str(conf["clock"]) else "24",
+            "DATE": date_format,
+            "DATE_ORDINAL": "true" if ordinal else "false",
+            **{key.upper(): "true" if conf[key] else "false" for key, _ in TOUCHES},
             "WALLPAPERS": str(len(accents) - 1),
             "ACCENTS": json.dumps(accents),
         })
@@ -155,15 +188,25 @@ def build_and_push(conf):
     print("Installing on the TV...")
     ssh(conf, f"mkdir -p {TV_DIR} && cd {TV_DIR} && {{ [ -x ./pearwebos ] && ./pearwebos unmount; true; }} && "
               "rm -rf files wallpapers && tar xf -", stdin=buf.getvalue())
-    ssh(conf, f"printf '#!/bin/sh\\n# PearWebOS\\n{TV_DIR}/pearwebos boot\\n' > {HOOK} && chmod 755 {HOOK}")
+    # in the background, so a slow boot neither holds up nor waits on other hooks
+    ssh(conf, f"rm -f {' '.join(OLD_HOOKS)}; printf '#!/bin/sh\\n# PearWebOS\\n"
+              f"setsid {TV_DIR}/pearwebos boot </dev/null >/dev/null 2>&1 &\\n' > {HOOK} && chmod 755 {HOOK}")
     print("Starting Pear Home (about 15 seconds)...")
     out = ssh(conf, f"{TV_DIR}/pearwebos on 2>&1 | tail -1; {TV_DIR}/pearwebos settings; true")
     print("  " + out.strip())
 
 
+def copy_key_command(tv):
+    """Putting this computer's SSH key on the TV; Windows has no ssh-copy-id."""
+    if not WINDOWS:
+        return f"ssh-copy-id root@{tv}"
+    return (f"type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh root@{tv} "
+            '"mkdir -p /home/root/.ssh && cat >> /home/root/.ssh/authorized_keys"')
+
+
 def preflight(conf):
     if not conf["tv"]:
-        sys.exit("No TV yet: run ./pear setup")
+        sys.exit(f"No TV yet: run {PEAR} setup")
     try:
         socket.create_connection((conf["tv"], 22), timeout=5).close()
     except OSError:
@@ -172,8 +215,9 @@ def preflight(conf):
                       capture_output=True).returncode != 0:
         sys.exit(f"Can't log into root@{conf['tv']} with an SSH key.\n"
                  "  1. In Homebrew Channel, open Settings and turn on SSH Server.\n"
-                 f"  2. Run: ssh-copy-id root@{conf['tv']}   (the default password is alpine)\n"
-                 "  Then run ./pear setup again.")
+                 "  2. Copy your key to the TV (the default password is alpine):\n"
+                 f"       {copy_key_command(conf['tv'])}\n"
+                 f"  Then run {PEAR} setup again.")
     if ssh(conf, "[ -d /var/lib/webosbrew/init.d ] && echo ok", check=False).strip() != "ok":
         sys.exit("This TV has no Homebrew Channel startup hooks (/var/lib/webosbrew/init.d). Is it rooted?")
 
@@ -198,9 +242,12 @@ def cmd_setup():
     print()
     conf["name"] = ask('Name for the greeting ("Good evening, ___"; blank for none)', conf["name"])
     conf["clock"] = "12" if "12" in ask("Clock: 24 or 12 hour", conf["clock"]) else "24"
+    conf["date"] = ask_date(conf["date"])
     q = ask("Photo quality: light (1600x900, lightest on the TV) or high (1920x1080, the most Home can show)",
             conf["wallpaper_quality"]).lower()
     conf["wallpaper_quality"] = "high" if q.startswith("h") else "light"
+    for key, question in TOUCHES:
+        conf[key] = ask(question, conf[key])
     conf["guard"] = not ask("Do you watch Live TV through an aerial or cable?", not conf["guard"])
     conf["boot_to_home"] = ask("Power on straight to Home?", conf["boot_to_home"])
     conf["quick_start"] = ask("Turn on Quick Start+ (power-on resumes Pear instantly)?", conf["quick_start"])
@@ -208,7 +255,7 @@ def cmd_setup():
     save(conf)
     print()
     build_and_push(conf)
-    print("\nDone. Put photos in photos/ and run ./pear sync to use them as backgrounds.")
+    print(f"\nDone. Put photos in photos/ and run {PEAR} sync to use them as backgrounds.")
 
 
 def cmd_sync():
@@ -237,7 +284,7 @@ def cmd_uninstall():
     conf = load()
     preflight(conf)
     print(ssh(conf, f"[ -x {TV_DIR}/pearwebos ] && {TV_DIR}/pearwebos off 2>&1 | tail -1; "
-                    f"rm -f {HOOK}; rm -rf {TV_DIR}; echo 'PearWebOS removed; LG Home is back.'", check=False).strip())
+                    f"rm -f {HOOK} {' '.join(OLD_HOOKS)}; rm -rf {TV_DIR}; echo 'PearWebOS removed; LG Home is back.'", check=False).strip())
     print("Settings Pear changed (power-on screen, Quick Start+, update prompt) are left as they are;\n"
           "change them back in the TV's own Settings if you want.")
 
@@ -247,6 +294,6 @@ if __name__ == "__main__":
     try:
         {"setup": cmd_setup, "sync": cmd_sync, "shot": cmd_shot, "uninstall": cmd_uninstall,
          "status": lambda: cmd_simple("status"), "on": lambda: cmd_simple("on"),
-         "off": lambda: cmd_simple("off")}.get(cmd, lambda: print(__doc__))()
+         "off": lambda: cmd_simple("off")}.get(cmd, lambda: print(__doc__.replace("./pear", PEAR)))()
     except KeyboardInterrupt:
         print()

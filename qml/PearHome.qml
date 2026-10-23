@@ -49,13 +49,29 @@ FocusScope {
     property double hiddenAt: 0
 
     readonly property string name: "@NAME@"
-    readonly property string clockFormat: "@CLOCK@"
+    readonly property bool twelveHour: "@CLOCK@" === "12"
+    readonly property string dateFormat: "@DATE@"
+    readonly property bool dateOrdinal: @DATE_ORDINAL@
+
+    // touches chosen in setup
+    readonly property bool optEntrance: @ENTRANCE@  // the page rises in when Home appears
+    readonly property bool optDrift: @DRIFT@        // the photo slowly zooms in and out
+    readonly property bool optQuiet: @QUIET@        // untouched a while, the dock fades away
+    readonly property int quietAfter: 45 * 1000
 
     // Qt's "h" is still 24-hour unless AM/PM is shown, so 12-hour is made here
     function clockText() {
-        if (clockFormat !== "12") return Qt.formatDateTime(now, "HH:mm");
+        if (!twelveHour) return Qt.formatDateTime(now, "HH:mm");
         var m = now.getMinutes();
         return (now.getHours() % 12 || 12) + ":" + (m < 10 ? "0" : "") + m;
+    }
+
+    // the line under the greeting; Qt formats can't say "20th", so that's added
+    function dateText() {
+        var t = Qt.formatDateTime(now, dateFormat);
+        if (!dateOrdinal) return t;
+        var d = now.getDate();
+        return t + (d >= 11 && d <= 13 ? "th" : ["th", "st", "nd", "rd"][d % 10] || "th");
     }
 
     property var dockApps: []
@@ -130,8 +146,14 @@ FocusScope {
         target: uiController
         ignoreUnknownSignals: true
         onHomeShownChanged: {
-            if (!uiController.homeShown) home.hiddenAt = Date.now();
-            else if (home.hiddenAt && Date.now() - home.hiddenAt > home.wallpaperAfter) home.pickWallpaper();
+            home.quiet = false;
+            if (!uiController.homeShown) {
+                home.hiddenAt = Date.now();
+                return;
+            }
+            if (home.hiddenAt && Date.now() - home.hiddenAt > home.wallpaperAfter) home.pickWallpaper();
+            home.tick();
+            if (home.optEntrance) entrance.restart();
         }
     }
 
@@ -149,12 +171,92 @@ FocusScope {
         onDataChanged: rebuildTimer.restart()
     }
 
+    // the clock moves on the minute, not every few seconds (and catches up
+    // whenever Home comes back, in case the TV slept)
+    function tick() {
+        now = new Date();
+        clock.interval = 60050 - (now.getSeconds() * 1000 + now.getMilliseconds());
+    }
+
     Timer {
-        interval: 5000
+        id: clock
+        interval: 1000
         running: home.visible
         repeat: true
         triggeredOnStart: true
-        onTriggered: home.now = new Date()
+        onTriggered: home.tick()
+    }
+
+    // ---- entrance: the page fades in and rises a little as Home appears ----
+
+    property real enter: 1
+
+    NumberAnimation {
+        id: entrance
+        target: home
+        property: "enter"
+        from: 0
+        to: 1
+        duration: 380
+        easing.type: Easing.OutCubic
+    }
+
+    // ---- quiet: untouched a while, only the photo, greeting and clock ----
+
+    property bool quiet: false
+    property double wokeAt: 0
+
+    Timer {
+        id: idle
+        interval: home.quietAfter
+        running: home.optQuiet && !home.quiet && !home.drawer && uiController.homeShown
+        onTriggered: {
+            home.quiet = true;
+            // park focus where no list can take the next key, so the first
+            // press only wakes Home (focusing Home itself would hand it back
+            // to the dock, which keeps its own focus inside)
+            asleep.forceActiveFocus();
+        }
+    }
+
+    Item { id: asleep }
+
+    // any sign of life: wake, and start the idle count again
+    function poke() {
+        if (quiet) {
+            quiet = false;
+            wokeAt = Date.now();
+            takeFocus();
+        }
+        if (idle.running) idle.restart();
+    }
+
+    onDrawerChanged: poke()
+
+    // ---- bump: the focused tile nudges when there's nowhere to go ----
+
+    property real bumpX: 0
+    property real bumpY: 0
+
+    function bump(dx, dy) {
+        poke();
+        bumpAnim.dx = dx * r(12);
+        bumpAnim.dy = dy * r(12);
+        bumpAnim.restart();
+    }
+
+    SequentialAnimation {
+        id: bumpAnim
+        property real dx: 0
+        property real dy: 0
+        ParallelAnimation {
+            NumberAnimation { target: home; property: "bumpX"; to: bumpAnim.dx; duration: 60; easing.type: Easing.OutQuad }
+            NumberAnimation { target: home; property: "bumpY"; to: bumpAnim.dy; duration: 60; easing.type: Easing.OutQuad }
+        }
+        ParallelAnimation {
+            NumberAnimation { target: home; property: "bumpX"; to: 0; duration: 200; easing.type: Easing.OutBack }
+            NumberAnimation { target: home; property: "bumpY"; to: 0; duration: 200; easing.type: Easing.OutBack }
+        }
     }
 
     // OK launches; held for 0.7s it opens LG's Edit Home to reorder.
@@ -183,7 +285,19 @@ FocusScope {
         }
     }
 
+    // the OK that woke Home from quiet is not also a launch
+    function wakingOk(event) {
+        return (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && Date.now() - wokeAt < 600;
+    }
+
     Keys.onPressed: {
+        if (home.quiet) {
+            home.poke();
+            event.accepted = true;
+            return;
+        }
+        if (home.wakingOk(event)) { event.accepted = true; return; }
+        home.poke();
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             releaseTimer.stop();
             if (!home.holding) {
@@ -197,6 +311,7 @@ FocusScope {
     }
 
     Keys.onReleased: {
+        if (home.wakingOk(event)) { event.accepted = true; return; }
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             if (home.holding) releaseTimer.restart();
             event.accepted = true;
@@ -210,23 +325,14 @@ FocusScope {
 
     // ---- background ----
 
-    Rectangle {
+    // the photo, crossfading when it changes (PearBackdrop.qml, mounted over
+    // Main/RecentBG.qml)
+    RecentBG {
         anchors.fill: parent
-        color: "#0c0c1a"
-        // only seen until the photo loads
-        visible: wallpaperImage.status !== Image.Ready
-    }
-
-    Image {
-        id: wallpaperImage
-
-        anchors.fill: parent
-        fillMode: Image.PreserveAspectCrop
-        sourceSize.width: 1920
-        source: "file:///var/lib/pearwebos/wallpapers/" + home.wallpaper + ".jpg"
-        asynchronous: true
+        wallpaper: home.wallpaper
+        drift: home.optDrift && home.visible
         // a missing photo falls back to the dusk landscape (0.jpg)
-        onStatusChanged: if (status === Image.Error && home.wallpaper > 0) home.wallpaper = 0
+        onMissing: home.wallpaper = 0
     }
 
     // (the shading for the greeting and tiles is baked into the photos:
@@ -267,7 +373,9 @@ FocusScope {
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.AllButtons
+        onPositionChanged: home.poke()
         onWheel: {
+            home.poke();
             // a notch is 120; a remote may send it in smaller pieces
             home.wheelTravel += wheel.angleDelta.y;
             while (home.wheelTravel <= -120) { home.wheelTravel += 120; home.stepDown(); }
@@ -284,6 +392,8 @@ FocusScope {
         width: parent.width
         height: parent.height
         y: home.drawer ? -(dock.y - r(64)) : 0
+        opacity: home.enter
+        transform: Translate { y: (1 - home.enter) * home.r(24) }
 
         Behavior on y { NumberAnimation { duration: 380; easing.type: Easing.OutCubic } }
 
@@ -306,6 +416,7 @@ FocusScope {
                 // room up to the clock (which is never wider than this reserve);
                 // a long name shrinks the line to fit, then is cut short
                 readonly property real room: header.width - r(110) - r(110) - r(480)
+                                             - (home.twelveHour ? r(90) : 0)
 
                 x: r(110)
                 y: r(120)
@@ -332,7 +443,7 @@ FocusScope {
                 x: r(110)
                 anchors.top: greetingLine.bottom
                 anchors.topMargin: r(10)
-                text: Qt.formatDateTime(home.now, "dddd d MMMM")
+                text: home.dateText()
                 color: home.accent
                 font.family: fontManager.smart_Regular.family
                 font.weight: fontManager.smart_Regular.weight
@@ -344,13 +455,29 @@ FocusScope {
             readonly property real capRatio: 0.672
             readonly property real digitRatio: 0.682
 
+            // AM / PM in 12-hour mode: small, beside the digits, on the date's
+            // baseline (at clock size it would crowd the greeting)
+            Text {
+                id: ampm
+
+                visible: home.twelveHour
+                anchors.right: parent.right
+                anchors.rightMargin: r(110)
+                anchors.baseline: dateLine.baseline
+                text: home.now.getHours() < 12 ? "AM" : "PM"
+                color: "#ffffff"
+                font.family: fontManager.smart_Regular.family
+                font.weight: fontManager.smart_Regular.weight
+                font.pixelSize: r(36)
+            }
+
             Text {
                 readonly property real capTop: greetingLine.y + greetingLine.baselineOffset
                                                - header.capRatio * greetingLine.font.pixelSize
                 readonly property real span: dateLine.y + dateLine.baselineOffset - capTop
 
-                anchors.right: parent.right
-                anchors.rightMargin: r(110)
+                anchors.right: home.twelveHour ? ampm.left : parent.right
+                anchors.rightMargin: home.twelveHour ? r(14) : r(110)
                 anchors.baseline: dateLine.baseline
                 text: home.clockText()
                 color: "#ffffff"
@@ -372,6 +499,8 @@ FocusScope {
             color: Qt.rgba(1, 1, 1, 0.11)
             border.color: Qt.rgba(1, 1, 1, 0.10)
             border.width: Math.max(1, r(1))
+            opacity: home.quiet ? 0 : 1
+            Behavior on opacity { NumberAnimation { duration: home.quiet ? 900 : 200 } }
 
             ListView {
                 id: dockList
@@ -389,8 +518,20 @@ FocusScope {
                 delegate: tile
                 highlightFollowsCurrentItem: false
 
-                Keys.onDownPressed: home.openDrawer()
-                Keys.onUpPressed: event.accepted = true
+                onCurrentIndexChanged: home.poke()
+                Keys.onDownPressed: {
+                    if (home.drawerApps.length) home.openDrawer();
+                    else home.bump(0, 1);
+                }
+                Keys.onUpPressed: home.bump(0, -1)
+                Keys.onLeftPressed: {
+                    if (currentIndex > 0) event.accepted = false;
+                    else home.bump(-1, 0);
+                }
+                Keys.onRightPressed: {
+                    if (currentIndex < count - 1) event.accepted = false;
+                    else home.bump(1, 0);
+                }
             }
         }
 
@@ -402,8 +543,8 @@ FocusScope {
             anchors.top: dock.bottom
             anchors.topMargin: r(80)
             spacing: r(14)
-            opacity: home.drawer || !home.drawerApps.length ? 0 : 0.55
-            Behavior on opacity { NumberAnimation { duration: 250 } }
+            opacity: home.drawer || home.quiet || !home.drawerApps.length ? 0 : 0.55
+            Behavior on opacity { NumberAnimation { duration: home.quiet ? 900 : 250 } }
 
             Canvas {
                 width: r(24)
@@ -467,6 +608,8 @@ FocusScope {
             highlightRangeMode: GridView.ApplyRange
             keyNavigationWraps: false
 
+            onCurrentIndexChanged: home.poke()
+
             Keys.onUpPressed: {
                 if (currentIndex < home.columns) home.closeDrawer();
                 else event.accepted = false;
@@ -476,6 +619,17 @@ FocusScope {
             Keys.onDownPressed: {
                 if (currentIndex + home.columns < count) event.accepted = false;
                 else if (Math.floor(currentIndex / home.columns) < Math.floor((count - 1) / home.columns)) currentIndex = count - 1;
+                else home.bump(0, 1);
+            }
+
+            Keys.onLeftPressed: {
+                if (currentIndex % home.columns > 0) event.accepted = false;
+                else home.bump(-1, 0);
+            }
+
+            Keys.onRightPressed: {
+                if (currentIndex % home.columns < home.columns - 1 && currentIndex < count - 1) event.accepted = false;
+                else home.bump(1, 0);
             }
         }
     }
@@ -507,6 +661,11 @@ FocusScope {
             width: home.tileW
             height: home.tileH
             z: focused ? 2 : 1
+            // a bump moves the focused tile, its glow and its name together
+            transform: Translate {
+                x: t.focused ? home.bumpX : 0
+                y: t.focused ? home.bumpY : 0
+            }
 
             // the pointer: hover picks the tile, a click opens it, a long
             // press opens Edit App List (as holding OK does)
@@ -517,6 +676,7 @@ FocusScope {
                 // dock still takes clicks but not hover (that would close it)
                 enabled: t.view === dockList || home.drawer
                 onEntered: {
+                    home.poke();
                     if (t.view === dockList && home.drawer) return;
                     t.view.currentIndex = index;
                     t.view.forceActiveFocus();
@@ -589,6 +749,11 @@ FocusScope {
                 font.weight: fontManager.smart_SemiBold.weight
                 font.pixelSize: home.r(26)
                 Behavior on opacity { NumberAnimation { duration: 160 } }
+                // rises into place as it fades in
+                transform: Translate {
+                    y: t.focused ? 0 : home.r(8)
+                    Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                }
             }
         }
     }

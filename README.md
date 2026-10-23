@@ -14,7 +14,7 @@ PearWebOS changes nothing on the TV's system partition. It mounts three files ov
 ## What you need
 
 - An LG TV on **webOS 6** (2021 models), **rooted** with [Homebrew Channel](https://www.webosbrew.org/), and **SSH turned on** in Homebrew Channel's settings. See [Tested on](#tested-on). Other webOS 6 models should work. On a firmware whose Home differs, setup stops before installing anything.
-- A Mac or Linux computer on the same network, with Python 3 and two libraries:
+- A Mac, Linux or Windows computer on the same network, with Python 3 and two libraries:
   ```bash
   python3 -m pip install --user pillow numpy
   ```
@@ -28,7 +28,7 @@ PearWebOS changes nothing on the TV's system partition. It mounts three files ov
 | LG OLED65A1PTA (2021 OLED) | 6.5.0 | 03.51.16 | Yes |
 | LG 86UP80009LA (2021 UHD) | 6.5.3 | 03.53.45 | Yes |
 | LG OLED55B13LA (2021 OLED) | 6.5.3 | ? | Yes |
-| LG OLED77C1AUB (2021 OLED) | 6.5.3 | ? | Yes |
+| LG OLED77C1AUB (2021 OLED) | 6.5.3 | 03.53.45 | Yes |
 | LG OLED77C44LA (2024 OLED) | 10.3.1 | 33.31.68 | No: Home is a Flutter app there |
 
 Tried it on another TV? Please [open an issue](https://github.com/Arnedeklerk/PearWebOS/issues/new) with the model, webOS version and firmware (Settings → General → About This TV), and whether it worked, so this table can grow.
@@ -49,7 +49,35 @@ ssh-copy-id root@<your-tv-ip>    # once; Homebrew Channel's default password is 
 ./pear setup
 ```
 
-`./pear setup` finds the TV on your network and asks a few questions: the name for the greeting, a 12 or 24 hour clock, photo quality, whether you watch Live TV through an aerial, and three power-on choices. Then it installs. It takes about a minute.
+On **Windows**, in PowerShell: put `python3` in front of `pear` everywhere this README says `./pear` (or `py pear`), and copy your key with `ssh`, as Windows has no `ssh-copy-id`:
+
+```powershell
+ssh-keygen -t ed25519            # once, if you have no SSH key yet
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh root@<your-tv-ip> "mkdir -p /home/root/.ssh && cat >> /home/root/.ssh/authorized_keys"
+python3 pear setup
+```
+
+A key with a passphrase needs the SSH agent holding it, since `pear` can't stop to ask. A Mac does this through the keychain; on Windows, start the agent once in an administrator PowerShell with `Get-Service ssh-agent | Set-Service -StartupType Automatic; Start-Service ssh-agent`, then `ssh-add`.
+
+### What setup asks
+
+It takes about a minute. Run it again any time to change an answer: it offers your current answers as the defaults.
+
+| Question | Default | What it changes |
+|---|---|---|
+| Name for the greeting | blank | "Good evening, ___". Blank leaves "Good evening". |
+| Clock | 24 | 12 hour adds a small AM/PM beside the time. |
+| Date style | 1 | 1 "Tuesday 20 October", 2 "Tuesday, October 20", 3 "Tue, Oct 20", 4 "Tue, Oct 20th". |
+| Photo quality | light | light 1600×900, high 1920×1080 (the most LG's Home shows). |
+| Rise in when Home appears | yes | A short fade and rise. |
+| Quiet after 45 seconds | yes | The dock fades away, leaving the photo, greeting and clock; the first press only wakes it. Kinder to OLEDs. |
+| Photo slowly zooms | no | A slow drift. It keeps the TV redrawing the whole screen, so it can stutter on some sets. |
+| Watch Live TV through an aerial? | no | No turns on `homeguard`, which opens Home rather than leave an empty Live TV. |
+| Power on straight to Home | yes | Instead of LG's "Today" wallpapers or the last input. |
+| Quick Start+ | yes | Power-off sleeps, so power-on resumes Pear at once. |
+| Hide the "update now?" prompt | yes | An update can remove root, and Pear with it. |
+
+Your answers live in `.pear.json` (ignored by git). Edit it and run `./pear sync` to skip the questions.
 
 ## Your photos
 
@@ -64,6 +92,7 @@ Put photos in `photos/` and run `./pear sync`. Each one is cropped to 16:9 and g
 | ↑ / Back | back to the dock |
 | OK | open the app |
 | hold OK | LG's Edit App List, to reorder or remove apps |
+| any button | wake Home from quiet |
 
 LG's promo apps (LG Channels, Shop Time, Sports Alert and the like) are left off the tiles. The list is `hiddenApps` in [qml/PearHome.qml](qml/PearHome.qml).
 
@@ -80,20 +109,20 @@ LG's promo apps (LG Channels, Shop Time, Sports Alert and the like) are left off
 
 ## How it works
 
-LG Home is written in QML. Pear's own Home is [qml/PearHome.qml](qml/PearHome.qml). It is loaded on top of LG's, which stays running underneath, so launching apps, the app order and Edit App List are still LG's own.
+LG Home is written in QML. Pear's own Home is [qml/PearHome.qml](qml/PearHome.qml), with the photo behind it in [qml/PearBackdrop.qml](qml/PearBackdrop.qml). It is loaded on top of LG's, which stays running underneath, so launching apps, the app order and Edit App List are still LG's own.
 
 **LG's files stay on your TV.** LG Home is proprietary, so this repository contains none of it. Setup copies the three LG files it needs off your TV, applies [small exact edits](installer/patch_home.py) on your computer, and sends the results back. Each edit must match exactly once, so a firmware that differs fails safely before anything is installed.
 
 On the TV everything lives in `/var/lib/pearwebos`, and a Homebrew Channel startup hook re-applies it at each boot:
 
 - [`pearwebos`](tv/pearwebos) mounts the files and restarts Home. LG Home is restored from memory snapshots with its QML preloaded, so it has to be cold-started to pick Pear up.
-- [`homeguard`](tv/homeguard) watches what is on screen and opens Home when the TV would otherwise sit on an empty Live TV. It is off if you said you watch Live TV.
+- [`homeguard`](tv/homeguard) watches what is on screen and opens Home when the TV would otherwise sit on an empty Live TV. It is off if you said you watch Live TV. It logs to `homeguard.log`; touch `/var/lib/pearwebos/debug` to log every change too.
 - [`luna-send-n`](tv/luna-send-n) works around webOS 6.4 firmware whose `luna-send -n` prints nothing.
 
 ## Good to know
 
 - **Firmware updates.** An LG update can remove root, and Pear with it. Setup can hide LG's "update now?" prompt. If it ever appears anyway, answer No unless you mean it.
-- **A full reboot**, such as after a power cut, starts with LG's stock Home for a moment before Pear takes over. With Quick Start+ on, ordinary power-ons resume straight into Pear.
+- **A full reboot**, such as after a power cut, starts with LG's stock Home for a few seconds before Pear takes over: LG's boot image holds its own Home, so Pear has to restart it. With Quick Start+ on, ordinary power-ons resume straight into Pear.
 - **If Pear's Home fails to load**, LG's Home shows instead, with the reason in small text in the bottom-left corner.
 
 ## Pairs well with

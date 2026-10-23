@@ -20,8 +20,12 @@ OPTIONAL = "optional"
 # root item, which every version has
 END = object()
 
-# where PearHome.qml is mounted: a file LG Home never loads
-PEAR_SLOT = "UserInterfaceLayer/Containers/Main/GradationBG.qml"
+# Pear's own files, each mounted over a file LG Home never loads (and so
+# named after it inside Pear: PearHome uses the backdrop as RecentBG { })
+PEAR_FILES = {
+    "UserInterfaceLayer/Containers/Main/GradationBG.qml": "PearHome.qml",
+    "UserInterfaceLayer/Containers/Main/RecentBG.qml": "PearBackdrop.qml",
+}
 
 LOADER = '''    // PearWebOS: an Apple TV style Home over LG's (which stays loaded beneath it)
     Loader {
@@ -130,13 +134,14 @@ PATCHES = {
 }
 
 # the stock files `pear setup` needs from the TV
-NEEDED = sorted(list(PATCHES) + [PEAR_SLOT])
+NEEDED = sorted(list(PATCHES) + list(PEAR_FILES))
 
 
-def build(stock, out, pear_qml, fill):
-    """Write the patched files and PearHome into out/, mirroring qml/."""
-    if not os.path.exists(os.path.join(stock, PEAR_SLOT)):
-        sys.exit(f"{PEAR_SLOT}: not on this TV, so there is nowhere to mount Pear")
+def build(stock, out, qml_dir, fill):
+    """Write the patched files and Pear's own into out/, mirroring qml/."""
+    for slot in PEAR_FILES:
+        if not os.path.exists(os.path.join(stock, slot)):
+            sys.exit(f"{slot}: not on this TV, so there is nowhere to mount Pear")
     for rel, edits in PATCHES.items():
         with open(os.path.join(stock, rel), encoding="utf-8") as f:
             text = f.read()
@@ -156,11 +161,12 @@ def build(stock, out, pear_qml, fill):
                          f"(expected 1 match, found {n}). Nothing was installed.")
             text = text.replace(old, new)
         write(out, rel, text)
-    with open(pear_qml, encoding="utf-8") as f:
-        text = f.read()
-    for key, value in fill.items():
-        text = text.replace(f"@{key}@", value)
-    write(out, PEAR_SLOT, text)
+    for slot, name in PEAR_FILES.items():
+        with open(os.path.join(qml_dir, name), encoding="utf-8") as f:
+            text = f.read()
+        for key, value in fill.items():
+            text = text.replace(f"@{key}@", value)
+        write(out, slot, text)
 
 
 def write(out, rel, text):
