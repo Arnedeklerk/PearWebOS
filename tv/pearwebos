@@ -86,22 +86,21 @@ guard() { [ "$GUARD" = 1 ] && "$DIR/homeguard" "$1"; }
 
 open_pear() { $LS -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"$PEAR_APP\"}" >/dev/null; }
 
-# through the same service Homebrew Channel installs with; done when the
-# app's files carry the new version (or after a minute)
+# through the same service Homebrew Channel installs with; done when its
+# subscription says so (or after two minutes)
 install_app() {
-    want=$(cat "$DIR/VERSION" 2>/dev/null)
     /usr/bin/luna-send -i luna://com.webos.appInstallService/dev/install \
         "{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"$1\",\"subscribe\":true}" >"$DIR/install.log" 2>&1 &
     pid=$!
     i=0
-    while [ $i -lt 60 ]; do
-        grep -q "\"version\": *\"$want\"" "$PEAR_APP_DIR/appinfo.json" 2>/dev/null && break
-        grep -qi '"returnValue": *false\|failed' "$DIR/install.log" && break
+    while [ $i -lt 120 ]; do
+        grep -qi '"state": *"installed"\|"returnValue": *false\|"state": *"[^"]*fail' "$DIR/install.log" && break
+        kill -0 "$pid" 2>/dev/null || break
         sleep 1; i=$((i + 1))
     done
     kill "$pid" 2>/dev/null
-    if grep -q "\"version\": *\"$want\"" "$PEAR_APP_DIR/appinfo.json" 2>/dev/null; then
-        log "app: $PEAR_APP $want installed"
+    if grep -qi '"state": *"installed"' "$DIR/install.log"; then
+        log "app: $PEAR_APP $(cat "$DIR/VERSION" 2>/dev/null) installed"
     else
         log "app: install didn't finish: $(tr '\n' ' ' < "$DIR/install.log" | cut -c1-300)"
         return 1
@@ -112,8 +111,13 @@ remove_app() {
     $LS -n 1 luna://com.webos.appInstallService/dev/remove "{\"id\":\"$PEAR_APP\"}" >/dev/null
 }
 
+# from qml mode to app mode (PEAR_MODE=app on webOS 6): LG Home's snapshot
+# still holds Pear's QML, so start it from its own files once
+leave_qml() { [ -f "$STAMP" ] && { log "app: putting LG's Home back to stock first"; go_stock; }; true; }
+
 app_on() {
     rm -f "$OFF"
+    leave_qml
     peard start
     "$DIR/homeguard" start
     open_pear
@@ -122,6 +126,7 @@ app_on() {
 
 app_off() {
     touch "$OFF"
+    leave_qml
     "$DIR/homeguard" stop
     peard stop
     open_home

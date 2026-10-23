@@ -49,7 +49,7 @@ FocusScope {
             if (done) done(x.status === 200 ? reply : null);
         };
         x.open(method, peard + path);
-        if (data) x.setRequestHeader("Content-Type", "application/json");
+        if (data) { x.setRequestHeader("Content-Type", "application/json"); x.setRequestHeader("X-Pear", "1"); }
         x.send(data ? JSON.stringify(data) : null);
     }
 

@@ -11,6 +11,7 @@ import tarfile
 import time
 
 APP_ID = "org.pearwebos.home"
+APP_DIR = f"/media/developer/apps/usr/palm/applications/{APP_ID}"
 WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 
 
@@ -54,6 +55,8 @@ def ipk(version):
     files, size = [], 0
     for d, _, names in os.walk(WEB):
         for n in sorted(names):
+            if n.startswith("."):
+                continue
             p = os.path.join(d, n)
             rel = os.path.relpath(p, WEB).replace(os.sep, "/")
             with open(p, "rb") as f:
@@ -64,7 +67,13 @@ def ipk(version):
                 data = json.dumps(info, indent=4).encode()
             files.append((f"{root}/{rel}", data))
             size += len(data)
-    dirs = sorted({os.path.dirname(f) for f, _ in files} | {"./usr", "./usr/palm", "./usr/palm/applications", root})
+    dirs = set()
+    for f, _ in files:
+        d = os.path.dirname(f)
+        while d not in ("", "."):
+            dirs.add(d)
+            d = os.path.dirname(d)
+    dirs = sorted(dirs)
     control = (f"Package: {APP_ID}\nVersion: {version}\nSection: misc\nPriority: optional\nArchitecture: all\n"
                f"Installed-Size: {size // 1024 + 1}\nMaintainer: PearWebOS\n"
                "Description: Pear, an Apple TV style Home\nwebOS-Package-Format-Version: 2\n"

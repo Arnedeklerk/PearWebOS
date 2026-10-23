@@ -192,7 +192,9 @@ def push_code(conf, accents, force=False):
     import icons
     mode = app.home_kind(ssh, conf)
     want = code_hash(mode)
-    if not force and ssh(conf, f"cat {TV_DIR}/code.sha 2>/dev/null", check=False).strip() == want:
+    have = ssh(conf, f"cat {TV_DIR}/code.sha 2>/dev/null; [ -f {app.APP_DIR}/appinfo.json ] || echo no-app",
+               check=False).split()
+    if not force and have[:1] == [want] and not (mode == "app" and "no-app" in have):
         print("Pear's code on the TV is current; Home picks up settings and photos within a minute.")
         return False
 

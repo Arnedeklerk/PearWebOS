@@ -19,8 +19,6 @@ LOG=$DIR/homeguard.log
 LS=$DIR/luna-send-n
 FG='{"subscribe":true,"extraInfo":true}'
 LOCK=/tmp/pearwebos-homeguard.lock
-GUARD=1
-[ -f "$DIR/pear.conf" ] && . "$DIR/pear.conf"
 if [ "$(cat "$DIR/mode" 2>/dev/null)" = app ]; then
     HOME_APP=org.pearwebos.home
     SWAP=com.webos.app.home    # LG's Home, which Pear stands in for
@@ -44,6 +42,9 @@ stranded() {
         *" $HOME_APP "*) return 1 ;;
     esac
     [ -n "$SWAP" ] && case " $1 " in *" $SWAP "*) return 0 ;; esac
+    # as Settings has it now (in app mode this runs whatever it says)
+    GUARD=1
+    [ -f "$DIR/pear.conf" ] && . "$DIR/pear.conf"
     [ "$GUARD" = 1 ] && [ ! -f "$DIR/allow-livetv" ] || return 1
     ids=$(echo "$1" | sed 's/com\.webos\.app\.livetv//g' | tr -d ' ')
     [ -z "$ids" ]

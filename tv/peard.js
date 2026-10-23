@@ -218,6 +218,18 @@ function allowed(origin) {
     return origin === 'null' || origin === 'file://' || DEV;
 }
 
+function decode(s) {
+    try { return decodeURIComponent(s); } catch (e) { return null; }
+}
+
+// a change comes from Pear: JSON, marked X-Pear (both of which a web page
+// can only send after asking, and is refused), and from no page or Pear's
+function fromPear(req) {
+    var origin = req.headers.origin;
+    return /^application\/json/.test(req.headers['content-type'] || '') && req.headers['x-pear'] === '1' &&
+           (!origin || allowed(origin));
+}
+
 function send(res, code, obj) {
     res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(obj));
@@ -234,14 +246,14 @@ http.createServer(function (req, res) {
     var origin = req.headers.origin;
     if (origin && allowed(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Pear');
     }
     if (req.method === 'OPTIONS') { res.writeHead(origin && allowed(origin) ? 204 : 403); return res.end(); }
     var m;
     if (req.method === 'GET' && (m = /^\/wallpapers\/(\d+)\.jpg$/.exec(url))) return file(res, DIR + '/wallpapers/' + m[1] + '.jpg');
     if (req.method === 'GET' && (m = /^\/icons\/([a-z0-9-]+)\.png$/.exec(url))) return file(res, DIR + '/icons/' + m[1] + '.png');
     if (req.method === 'GET' && (m = /^\/apps\/(.+)\.png$/.exec(url))) {
-        var lp = launchPoints[decodeURIComponent(m[1])];
+        var lp = launchPoints[decode(m[1])];
         var icon = lp && (lp.extraLargeIcon || lp.largeIcon || lp.icon);
         return icon ? file(res, icon.replace(/^file:\/\//, '')) : send(res, 404, { error: 'not found' });
     }
@@ -252,10 +264,11 @@ http.createServer(function (req, res) {
     if (req.method === 'GET' && url === '/weather') return getWeather(function (w) { send(res, 200, w || {}); });
     if (req.method === 'GET' && url === '/inputs') return inputs(function (l) { send(res, 200, l); });
     if (req.method === 'GET' && url === '/places') {
-        var name = decodeURIComponent((req.url.split('name=')[1] || '').split('&')[0]).trim();
+        var name = (decode((req.url.split('name=')[1] || '').split('&')[0]) || '').trim();
         return places(name, function (l) { send(res, l ? 200 : 502, l || { error: 'offline' }); });
     }
     if (req.method !== 'POST') return send(res, 404, { error: 'not found' });
+    if (!fromPear(req)) return send(res, 403, { error: 'not from Pear' });
 
     body(req, function (b) {
         if (b === null) return send(res, 400, { error: 'bad JSON' });

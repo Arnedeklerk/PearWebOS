@@ -49,28 +49,42 @@ function api(method, path, data, done) {
         if (done) done(x.status === 200 ? reply : null);
     };
     x.open(method, PEARD + path);
-    if (data) x.setRequestHeader('Content-Type', 'application/json');
+    if (data) { x.setRequestHeader('Content-Type', 'application/json'); x.setRequestHeader('X-Pear', '1'); }
     x.send(data ? JSON.stringify(data) : null);
 }
 
 function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 
-// settings, photos, weather, apps and inputs; whatever changed is redrawn
+// settings, photos, weather, apps and inputs; whatever changed is redrawn.
+// A failed request keeps what's shown: peard may not be up yet (at boot, or
+// just after Restart Pear), so it tries again shortly
+var retry = null;
+
+function again() {
+    clearTimeout(retry);
+    retry = setTimeout(refresh, 3000);
+}
+
 function refresh() {
-    api('GET', '/config', null, function (c) { if (c && !same(c, home.config)) { home.config = c; changed(); } });
+    api('GET', '/config', null, function (c) {
+        if (!c) return again();
+        if (!same(c, home.config)) { home.config = c; changed(); }
+    });
     api('GET', '/wallpapers', null, function (w) {
         if (!w || !w.accents || same(w, home.photos)) return;
         home.photos = w;
         if (home.wallpaper === 0 || home.wallpaper > w.count) pickWallpaper(); else showHeader();
     });
     api('GET', '/weather', null, function (w) {
-        w = w && w.temp !== undefined ? w : null;
+        if (!w) return;
+        w = w.temp !== undefined ? w : null;
         if (!same(w, home.weather)) { home.weather = w; showHeader(); }
     });
     api('GET', '/apps', null, function (l) { if (l && !same(l, home.apps)) { home.apps = l; rebuild(); } });
     api('GET', '/inputs', null, function (l) {
+        if (!l) return;
         var tiles = [];
-        for (var i = 1; l && i < l.length; i++)   // [0] is Live TV, already a tile
+        for (var i = 1; i < l.length; i++)   // [0] is Live TV, already a tile
             tiles.push({ id: l[i].id, title: l[i].label, iconColor: KIND_COLOURS[l[i].kind] || '#1d2433',
                          input: true, icon: '/icons/' + (l[i].kind || 'input') + '.png' });
         if (!same(tiles, home.inputTiles)) { home.inputTiles = tiles; rebuild(); }
