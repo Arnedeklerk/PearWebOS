@@ -11,9 +11,9 @@ EditTile {
 
     id: settings
 
-    title: page === "apps" ? "Apps on Home" : "Settings"
+    title: page === "apps" ? "Apps on Home" : page === "places" ? "Town" : "Settings"
 
-    property string page: "main"     // "main" or "apps"
+    property string page: "main"     // "main", "apps" or "places"
     property bool confirmLg: false   // "Use LG's Home" asks for a second OK
 
     readonly property var c: home.config
@@ -34,8 +34,9 @@ EditTile {
         { key: "drift", label: "Slow photo zoom", value: onOff(c.drift === true),
           note: "Redraws the whole screen all the time; can stutter on some TVs" },
         { header: true, label: "Weather" },
+        { key: "town", label: "Town", value: w.place ? w.place.split(",")[0] : "Not set" },
         { key: "weather", label: "Weather by the date", value: w.lat === null || w.lat === undefined ? "" : onOff(w.on),
-          note: w.place ? w.place : "Set your town with ./pear setup on a computer",
+          note: w.lat === null || w.lat === undefined ? "Pick a town first" : "",
           dim: w.lat === null || w.lat === undefined },
         { key: "units", label: "Units", value: w.units === "f" ? "°F" : "°C" },
         { header: true, label: "Apps" },
@@ -69,7 +70,29 @@ EditTile {
         appRows = rows;
     }
 
-    readonly property var rows: page === "apps" ? appRows : mainRows
+    // towns matching what was typed, for the weather
+    property var placeRows: []
+
+    function findPlaces(name) {
+        page = "places";
+        placeRows = [{ key: "back", label: "‹  Settings" }, { label: "Looking for " + name + "...", dim: true }];
+        first(rowList);
+        home.api("GET", "/places?name=" + encodeURIComponent(name), null, function (list) {
+            var rows = [{ key: "back", label: "‹  Settings" }];
+            if (list === null) rows.push({ label: "Couldn't look that up (is the TV online?)", dim: true });
+            else if (!list.length) rows.push({ label: "No town called " + name, dim: true });
+            else {
+                rows.push({ header: true, label: "Which one?" });
+                list.forEach(function (p) {
+                    rows.push({ key: "place", label: p.place, note: p.region, place: p.place, lat: p.lat, lon: p.lon });
+                });
+            }
+            placeRows = rows;
+            first(rowList);
+        });
+    }
+
+    readonly property var rows: page === "apps" ? appRows : page === "places" ? placeRows : mainRows
 
     function show() {
         page = "main";
@@ -93,7 +116,21 @@ EditTile {
         if (!r) return;
         if (r.key !== "lg") confirmLg = false;
         switch (r.key) {
-        case "name": nameEditor.start(); break;
+        case "name":
+            editor.start("Greeting name", home.config.name || "",
+                         "OK saves, Back cancels. Leave it empty for just \"Good evening\".",
+                         function (text) { home.save({ name: text }); });
+            break;
+        case "town":
+            editor.start("Town for the weather", "",
+                         "Type the town, then OK to look it up.",
+                         function (text) { if (text) settings.findPlaces(text); });
+            break;
+        case "place":
+            setWeather({ place: r.place, lat: r.lat, lon: r.lon, on: true });
+            page = "main";
+            first(rowList);
+            break;
         case "clock": home.save({ clock: String(c.clock) === "12" ? "24" : "12" }); break;
         case "date":
             var ks = home.dateStyles.map(function (d) { return d.key; });
@@ -144,11 +181,11 @@ EditTile {
         preferredHighlightBegin: home.r(120)
         preferredHighlightEnd: height - home.r(120)
         highlight: Item {}
-        visible: !nameEditor.visible
+        visible: !editor.visible
 
         Keys.onPressed: {
-            // Back on the apps page goes back to Settings, not out
-            if (event.key === webOS.Key_webOS_Back && settings.page === "apps") {
+            // Back on a sub-page goes back to Settings, not out
+            if (event.key === webOS.Key_webOS_Back && settings.page !== "main") {
                 settings.page = "main";
                 settings.first(rowList);
                 event.accepted = true;
@@ -158,30 +195,36 @@ EditTile {
         }
     }
 
-    // the greeting name, typed with the TV's on-screen keyboard
+    // a line of text, typed with the TV's on-screen keyboard: the greeting
+    // name, or a town to look up
     Item {
-        id: nameEditor
+        id: editor
+
+        property var done: null
 
         anchors.fill: parent
         visible: false
 
-        function start() {
-            field.text = home.config.name || "";
+        function start(label, text, hint, onDone) {
+            heading.text = label;
+            note.text = hint;
+            field.text = text;
+            done = onDone;
             visible = true;
             field.forceActiveFocus();
             Qt.inputMethod.show();
         }
 
         function finish(keep) {
-            if (keep) home.save({ name: field.text.trim() });
             Qt.inputMethod.hide();
             visible = false;
             rowList.forceActiveFocus();
+            if (keep && done) done(field.text.trim());
         }
 
         Text {
+            id: heading
             x: home.r(28)
-            text: "Greeting name"
             color: Qt.rgba(1, 1, 1, 0.6)
             font.family: fontManager.smart_Regular.family
             font.pixelSize: home.r(26)
@@ -204,20 +247,20 @@ EditTile {
                 font.family: fontManager.smart_Regular.family
                 font.pixelSize: home.r(32)
                 maximumLength: 40
-                Keys.onReturnPressed: nameEditor.finish(true)
-                Keys.onEnterPressed: nameEditor.finish(true)
+                Keys.onReturnPressed: editor.finish(true)
+                Keys.onEnterPressed: editor.finish(true)
                 Keys.onPressed: {
-                    if (event.key === webOS.Key_webOS_Back) { nameEditor.finish(false); event.accepted = true; }
+                    if (event.key === webOS.Key_webOS_Back) { editor.finish(false); event.accepted = true; }
                 }
             }
         }
 
         Text {
+            id: note
             y: home.r(160)
             x: home.r(28)
             width: parent.width - home.r(56)
             wrapMode: Text.WordWrap
-            text: "OK saves, Back cancels. Leave it empty for just \"Good evening\"."
             color: Qt.rgba(1, 1, 1, 0.5)
             font.family: fontManager.smart_Regular.family
             font.pixelSize: home.r(24)

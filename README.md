@@ -72,7 +72,7 @@ It takes about a minute. Run it again any time to change an answer: it offers yo
 | Name for the greeting | blank | "Good evening, ___". Blank leaves "Good evening". |
 | Clock | 24 | 12 hour adds a small AM/PM beside the time. |
 | Date style | 1 | 1 "Tuesday 20 October", 2 "Tuesday, October 20", 3 "Tue, Oct 20", 4 "Tue, Oct 20th". |
-| Weather | no | Your town (looked up on Open-Meteo), and °C or °F. The TV fetches it every 30 minutes; nothing else goes online. |
+| Weather | no | Your town (looked up on Open-Meteo), and °C or °F; the town can also be set on the TV. The TV fetches it every 30 minutes; nothing else goes online. |
 | Photo quality | light | light 1600×900, high 1920×1080 (the most LG's Home shows). |
 | Rise in when Home appears | yes | A short fade and rise. |
 | Quiet after 45 seconds | yes | The dock fades away, leaving the photo, greeting and clock; the first press only wakes it. Kinder to OLEDs. |
@@ -114,7 +114,7 @@ The Magic Remote's pointer and wheel work too: point at a tile and click, or scr
 | Clock, date style | 24/12 hour, and the four date styles |
 | Show another photo | right now |
 | Rise in, quiet, slow zoom | the touches from setup |
-| Weather, units | on or off once your town is set in setup; °C or °F |
+| Town, weather, units | type your town with the TV's keyboard and pick the match; weather on or off; °C or °F |
 | Apps on Home | every app, shown or hidden |
 | TV | never sit on an empty Live TV, power on to Home, Quick Start+, hide LG's update prompt |
 | Restart Pear | re-applies Pear, as setup does |

@@ -8,6 +8,7 @@
 //                             and re-applies the TV settings when those change
 //   GET  /wallpapers          {count, accents} for wallpapers/0..count.jpg
 //   GET  /weather             cached; refetched from Open-Meteo after 30 min
+//   GET  /places?name=...     towns by that name, for the weather (Open-Meteo)
 //   GET  /inputs              Live TV and the HDMI ports, from the TV
 //   POST /launch {id}         open an app or input
 //   POST /apply               restart Home with Pear (picks up new QML)
@@ -111,6 +112,29 @@ function getWeather(cb) {
     }).on('error', function () { cb(weather.data); });
 }
 
+function places(name, cb) {
+    var url = 'https://geocoding-api.open-meteo.com/v1/search?count=6&name=' + encodeURIComponent(name);
+    https.get(url, function (res) {
+        var body = '';
+        res.on('data', function (d) { body += d; });
+        res.on('end', function () {
+            var out = [];
+            try {
+                (JSON.parse(body).results || []).forEach(function (r) {
+                    out.push({
+                        place: [r.name, r.country].filter(Boolean).join(', '),
+                        // the county or state, to tell the Cambridges apart
+                        region: r.admin1 || '',
+                        lat: Math.round(r.latitude * 1000) / 1000,
+                        lon: Math.round(r.longitude * 1000) / 1000
+                    });
+                });
+            } catch (e) { /* none */ }
+            cb(out);
+        });
+    }).on('error', function () { cb(null); });
+}
+
 // ---- inputs ----
 
 function inputs(cb) {
@@ -144,6 +168,10 @@ http.createServer(function (req, res) {
         return send(res, 200, readJson(DIR + '/wallpapers/index.json', { count: 0, accents: ['#e9a77f'] }));
     if (req.method === 'GET' && url === '/weather') return getWeather(function (w) { send(res, 200, w || {}); });
     if (req.method === 'GET' && url === '/inputs') return inputs(function (l) { send(res, 200, l); });
+    if (req.method === 'GET' && url === '/places') {
+        var name = decodeURIComponent((req.url.split('name=')[1] || '').split('&')[0]).trim();
+        return places(name, function (l) { send(res, l ? 200 : 502, l || { error: 'offline' }); });
+    }
     if (req.method !== 'POST') return send(res, 404, { error: 'not found' });
 
     body(req, function (b) {
