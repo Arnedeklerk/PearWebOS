@@ -54,6 +54,9 @@ FocusScope {
 
                 width: home.r(72)
                 height: home.r(72)
+                // faint until the bar is reached, so they don't compete with the photo
+                opacity: button.focused ? 1 : topBar.activeFocus ? 0.75 : 0.4
+                Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
 
                 Rectangle {
                     id: disc
