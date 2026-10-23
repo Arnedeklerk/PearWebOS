@@ -11,7 +11,7 @@
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-lightgrey"></a>
 </p>
 
-![Pear Home](docs/screenshot.jpg)
+<p align="center"><img src="docs/tour.gif" alt="A tour of Pear: the dock, All apps, Inputs and Settings" width="100%"></p>
 
 - **A calm welcome.** Your name, the date, a big clock and the weather, over your own photos.
 - **Six apps in a glass dock.** Every other app is one press down.
