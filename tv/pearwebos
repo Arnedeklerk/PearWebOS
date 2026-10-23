@@ -10,8 +10,9 @@
 #  - a relaunch restores the CRIU snapshot in $CKPT, which the app manager
 #    retakes after a cold start with whatever is mounted then;
 #  - a full boot restores LG's quick-start image, which holds stock Home.
-# $STAMP records the Home process started with Pear in. If the Home running
-# at boot is not that one, it came from LG's image and is rebuilt.
+# $STAMP records the Home process started with Pear in, and in which boot. If
+# the Home running at boot is not that one, it came from LG's image and is
+# rebuilt.
 #
 #   pearwebos on      mount, cold-start Home, check it came up
 #   pearwebos off     unmount, cold-start stock Home, and stay off at boot
@@ -59,8 +60,13 @@ umount_all() {
 
 home_pid() { ps -eo pid,args | grep '[/]usr/bin/com.webos.app.home' | awk '{print $1}' | head -1; }
 
-# which Home this is: its pid (kept across CRIU restores) and the snapshot
-pear_id() { echo "$(home_pid) $([ -d "$CKPT" ] && stat -c '%Y-%i' "$CKPT" 2>/dev/null)"; }
+# which Home this is: its pid (kept across CRIU restores), the snapshot, and
+# the boot. Pid and snapshot alone can repeat: a full boot starts things in
+# the same order, so LG's stock Home often gets the very pid Pear's had, and
+# looked like it (#13). The boot id is new at every boot, and a full boot
+# always brings LG's own Home; Quick Start+ resumes keep it.
+boot_id() { cut -c1-8 /proc/sys/kernel/random/boot_id 2>/dev/null; }
+pear_id() { echo "$(home_pid) $([ -d "$CKPT" ] && stat -c '%Y-%i' "$CKPT" 2>/dev/null) $(boot_id)"; }
 
 open_home() { $LS -n 1 luna://com.webos.applicationManager/launch '{"id":"com.webos.app.home"}' >/dev/null; }
 
