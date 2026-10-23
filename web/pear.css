@@ -1,0 +1,424 @@
+/* PearWebOS's app: the look of qml/PearHome.qml, in px at 1920x1080 (home.js
+   scales #stage to the screen). Nothing here blurs: full-screen effects are
+   what a TV's GPU runs short of. */
+
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0c0c1a;
+    color: #fff;
+    font-family: "LG Smart UI", "Museo Sans", "Helvetica Neue", Arial, sans-serif;
+    font-weight: 400;
+    cursor: default;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+#stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    transform-origin: 0 0;
+}
+
+/* ---- the photo, crossfading ---- */
+
+#backdrop, #backdrop img, #shade {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+}
+
+#backdrop img {
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 800ms ease-in-out;
+}
+
+#backdrop img.front { opacity: 1; }
+
+#backdrop.drift { animation: drift 120s ease-in-out infinite; }
+
+@keyframes drift {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+#shade {
+    background: rgba(8, 8, 18, 0.82);
+    opacity: 0;
+    transition: opacity 300ms;
+}
+
+.drawer #shade { opacity: 1; }
+
+/* ---- the page: rises in, and slides up to make the dock the drawer's top row ---- */
+
+#page {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    transition: transform 380ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.drawer #page { transform: translateY(-642px); }
+
+#stage.entering #page { opacity: 0; transform: translateY(24px); transition: none; }
+#stage.entered #page { transition: transform 380ms cubic-bezier(0.33, 1, 0.68, 1), opacity 380ms cubic-bezier(0.33, 1, 0.68, 1); }
+
+#header {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 320px;
+    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
+    transition: opacity 250ms;
+}
+
+.drawer #header { opacity: 0; }
+
+#greeting {
+    position: absolute;
+    left: 110px;
+    top: 120px;
+    font-weight: 300;
+    font-size: 78px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#date {
+    position: absolute;
+    left: 110px;
+    font-size: 36px;
+    white-space: nowrap;
+}
+
+#clock {
+    position: absolute;
+    right: 110px;
+    font-weight: 300;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+#ampm {
+    position: absolute;
+    right: 110px;
+    font-size: 36px;
+    display: none;
+}
+
+.twelve #ampm { display: block; }
+
+/* a zero-size mark on a line's baseline, for home.js to measure */
+i.base { display: inline-block; width: 0; height: 0; vertical-align: baseline; }
+
+/* ---- Inputs and Settings, top right ---- */
+
+#topbar {
+    position: absolute;
+    right: 110px;
+    top: 36px;
+    display: flex;
+    transition: opacity 250ms;
+}
+
+.drawer #topbar, .quiet #topbar { opacity: 0; }
+.quiet #topbar { transition-duration: 900ms; }
+
+.button {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    margin-left: 22px;
+    opacity: 0.4;
+    transition: opacity 300ms ease-in-out;
+}
+
+.top .button { opacity: 0.75; }
+.top .button.focused { opacity: 1; }
+
+.disc {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.16);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 160ms cubic-bezier(0.33, 1, 0.68, 1), background 120ms;
+}
+
+.disc svg { width: 40px; height: 40px; stroke: #fff; fill: #fff; }
+.disc svg g[fill="none"] { fill: none; }
+
+.top .focused .disc { background: #fff; border-color: transparent; transform: scale(1.12); }
+.top .focused .disc svg { stroke: #14141c; fill: #14141c; }
+
+.button .label {
+    position: absolute;
+    top: 86px;
+    left: -40px;
+    right: -40px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 22px;
+    opacity: 0;
+    transition: opacity 160ms;
+}
+
+.top .focused .label { opacity: 1; }
+
+/* ---- the dock ---- */
+
+#dock {
+    position: absolute;
+    left: 45px;
+    top: 706px;
+    width: 1830px;
+    height: 226px;
+    box-sizing: border-box;
+    padding: 34px;
+    border-radius: 50px;
+    background: rgba(255, 255, 255, 0.11);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    transition: opacity 200ms;
+}
+
+.quiet #dock { opacity: 0; transition-duration: 900ms; }
+
+.row { position: relative; height: 158px; }
+
+/* ---- a tile ---- */
+
+.tile {
+    position: absolute;
+    top: 0;
+    width: 262px;
+    height: 158px;
+}
+
+.tile.focused { z-index: 2; }
+
+.card {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 262px;
+    height: 158px;
+    border-radius: 26px;
+    overflow: hidden;
+    background: #2b2a40;
+    transition: transform 170ms cubic-bezier(0.33, 1, 0.68, 1), box-shadow 160ms;
+}
+
+.card img {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    max-width: 148px;
+    max-height: 148px;
+    transform: translate(-50%, -50%);
+}
+
+/* a soft sheen, brighter on the focused tile */
+.card::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 26px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: linear-gradient(rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 55%);
+}
+
+.focused .card { transform: scale(1.14); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55); }
+.focused .card::after { border-color: transparent; background: linear-gradient(rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0) 55%); }
+
+.tile .name {
+    position: absolute;
+    left: -39px;
+    width: 340px;
+    top: 182px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 26px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 160ms, transform 220ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+#gridRows .tile .name { top: 182px; }
+#dockRow .tile .name { top: 208px; }
+.focused .name { opacity: 1; transform: translateY(0); }
+
+/* ---- All apps, and the drawer ---- */
+
+#allApps {
+    position: absolute;
+    left: 0;
+    width: 1920px;
+    top: 1012px;
+    text-align: center;
+    font-size: 28px;
+    opacity: 0.55;
+    transition: opacity 250ms;
+}
+
+#allApps svg { width: 24px; height: 14px; margin-right: 14px; vertical-align: middle; }
+
+.drawer #allApps, .quiet #allApps, .noDrawer #allApps { opacity: 0; }
+.quiet #allApps { transition-duration: 900ms; }
+
+#grid {
+    position: absolute;
+    left: 59px;
+    top: 988px;
+    width: 1820px;
+    height: 734px;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 300ms;
+}
+
+.drawer #grid { opacity: 1; }
+
+#gridRows {
+    position: relative;
+    transition: transform 220ms ease-out;
+}
+
+/* ---- the panel that slides in from the right: Inputs and Settings ---- */
+
+#panel { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; visibility: hidden; transition: visibility 0s 260ms; }
+.panel #panel { visibility: visible; transition: none; }
+
+#dim {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    background: rgba(5, 5, 13, 0.55);
+    opacity: 0;
+    transition: opacity 220ms;
+}
+
+.panel #dim { opacity: 1; }
+
+#sheet {
+    position: absolute;
+    top: 60px;
+    left: 1960px;
+    width: 780px;
+    height: 960px;
+    box-sizing: border-box;
+    border-radius: 44px;
+    background: rgba(28, 28, 41, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 0 80px rgba(0, 0, 0, 0.5);
+    transition: left 260ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.panel #sheet { left: 1080px; }
+
+#heading {
+    position: absolute;
+    left: 48px;
+    top: 40px;
+    font-weight: 600;
+    font-size: 44px;
+}
+
+#body {
+    position: absolute;
+    left: 24px;
+    right: 24px;
+    top: 128px;
+    bottom: 28px;
+    overflow: hidden;
+}
+
+#rows { position: relative; transition: transform 120ms ease-out; }
+
+.prow { height: 86px; position: relative; }
+.prow.header { height: 64px; }
+
+.prow.header .plabel {
+    position: absolute;
+    left: 28px;
+    bottom: 10px;
+    font-weight: 600;
+    font-size: 24px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.prow .pill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 4px;
+    bottom: 4px;
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    padding: 0 28px;
+    transition: background 120ms;
+}
+
+.prow .text { flex: 1; min-width: 0; margin-right: 16px; }
+.prow .plabel, .prow .pnote { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prow .plabel { font-size: 32px; }
+.prow .pnote { font-size: 22px; color: rgba(255, 255, 255, 0.5); }
+.prow .pvalue { font-size: 30px; color: rgba(255, 255, 255, 0.6); white-space: nowrap; }
+.prow.dim .plabel { color: rgba(255, 255, 255, 0.45); }
+
+.prow.focused .pill { background: #fff; }
+.prow.focused .plabel { color: #14141c; }
+.prow.focused .pnote, .prow.focused .pvalue { color: #5a5a66; }
+
+#editor { display: none; }
+.editing #editor { display: block; }
+.editing #rows { display: none; }
+
+#editorLabel { margin-left: 28px; font-size: 26px; color: rgba(255, 255, 255, 0.6); }
+
+#field {
+    display: block;
+    width: 100%;
+    height: 86px;
+    margin-top: 14px;
+    box-sizing: border-box;
+    border: 0;
+    outline: 0;
+    border-radius: 22px;
+    padding: 0 28px;
+    background: #fff;
+    color: #14141c;
+    font: inherit;
+    font-size: 32px;
+}
+
+#editorNote { margin: 26px 28px 0; font-size: 24px; color: rgba(255, 255, 255, 0.5); }

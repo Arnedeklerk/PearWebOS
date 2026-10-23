@@ -9,11 +9,18 @@
 //   GET  /wallpapers          {count, accents} for wallpapers/0..count.jpg
 //   GET  /weather             cached; refetched from Open-Meteo after 30 min
 //   GET  /places?name=...     towns by that name, for the weather (Open-Meteo)
+//   GET  /apps                the TV's apps in Home's order, for Pear's own app
+//                             (webOS 10); icons at /apps/<launchPointId>.png
+//   GET  /wallpapers/<n>.jpg, /icons/<name>.png   the files, for the same
 //   GET  /inputs              Live TV and the HDMI ports, from the TV, with
 //                             what's plugged in where it says (devices.js)
-//   POST /launch {id}         open an app or input
+//   POST /launch {id}         open an app, input or launch point
 //   POST /apply               restart Home with Pear (picks up new QML)
 //   POST /lg-home             back to LG's own Home (`pearwebos off`)
+//
+// Pear's own app (web/) loads from file://, so it may read replies (CORS);
+// web pages in the TV's browser may not. PEARD_DEV=1 allows any page, for
+// trying the app in a desktop browser.
 //
 // Node 8 (what webOS 6 has): no optional chaining, no fetch.
 'use strict';
@@ -25,9 +32,12 @@ var path = require('path');
 var child = require('child_process');
 var devices = require('./devices');
 
-var DIR = '/var/lib/pearwebos';
+var DIR = process.env.PEAR_DIR || '/var/lib/pearwebos';
 var PORT = 47321;
-var LS = DIR + '/luna-send-n';
+var LS = process.env.PEAR_LS || DIR + '/luna-send-n';
+var DEV = process.env.PEARD_DEV === '1';
+// Pear's own app, which the TV's app list leaves out
+var PEAR_APP = 'org.pearwebos.home';
 var CONFIG = DIR + '/config.json';
 var VERSION = (function () { try { return fs.readFileSync(DIR + '/VERSION', 'utf8').trim(); } catch (e) { return '?'; } })();
 
@@ -75,7 +85,9 @@ function luna(uri, payload, cb) {
 
 // in the background: these restart Home, which is who is asking
 function detached(args) {
-    child.spawn(DIR + '/pearwebos', args, { detached: true, stdio: 'ignore' }).unref();
+    var p = child.spawn(DIR + '/pearwebos', args, { detached: true, stdio: 'ignore' });
+    p.on('error', function (e) { console.error('pearwebos ' + args.join(' ') + ': ' + e.message); });
+    p.unref();
 }
 
 // ---- weather ----
@@ -157,7 +169,54 @@ function inputs(cb) {
     });
 }
 
+// ---- apps (for Pear's own app; in LG Home, Pear reads them from Home) ----
+
+// the last list, by launch point: what /launch and the icons may use
+var launchPoints = {};
+
+function apps(cb) {
+    luna('luna://com.webos.applicationManager/listLaunchPoints', {}, function (r) {
+        var list = [];
+        launchPoints = {};
+        ((r && r.launchPoints) || []).forEach(function (lp) {
+            if (!lp.id || lp.id === PEAR_APP || lp.visible === false) return;
+            // an app's own launch point goes by the app's id, as in LG Home's
+            // list (and so in the hidden list); extra ones by their own
+            var lpId = lp.launchPointId || '';
+            var key = !lpId || lpId === lp.id + '_default' ? lp.id : lpId;
+            launchPoints[key] = lp;
+            list.push({
+                id: key, title: lp.title || lp.id,
+                iconColor: lp.iconColor || lp.bgColor || '', icon: '/apps/' + encodeURIComponent(key) + '.png'
+            });
+        });
+        cb(list);
+    });
+}
+
+function launch(id, cb) {
+    var lp = launchPoints[id];
+    var payload = lp ? { id: lp.id, params: lp.params || {} } : { id: id };
+    luna('luna://com.webos.applicationManager/launch', payload, function (r) { cb(!!(r && r.returnValue)); });
+}
+
 // ---- HTTP ----
+
+var TYPES = { '.jpg': 'image/jpeg', '.png': 'image/png' };
+
+function file(res, path) {
+    fs.readFile(path, function (err, data) {
+        if (err) return send(res, 404, { error: 'not found' });
+        res.writeHead(200, { 'Content-Type': TYPES[(/\.[a-z]+$/.exec(path) || [''])[0]] || 'application/octet-stream',
+                             'Cache-Control': 'max-age=300' });
+        res.end(data);
+    });
+}
+
+// Pear's app is a file:// page: its origin is "null" (or file://)
+function allowed(origin) {
+    return origin === 'null' || origin === 'file://' || DEV;
+}
 
 function send(res, code, obj) {
     res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -172,6 +231,21 @@ function body(req, cb) {
 
 http.createServer(function (req, res) {
     var url = req.url.split('?')[0];
+    var origin = req.headers.origin;
+    if (origin && allowed(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    }
+    if (req.method === 'OPTIONS') { res.writeHead(origin && allowed(origin) ? 204 : 403); return res.end(); }
+    var m;
+    if (req.method === 'GET' && (m = /^\/wallpapers\/(\d+)\.jpg$/.exec(url))) return file(res, DIR + '/wallpapers/' + m[1] + '.jpg');
+    if (req.method === 'GET' && (m = /^\/icons\/([a-z0-9-]+)\.png$/.exec(url))) return file(res, DIR + '/icons/' + m[1] + '.png');
+    if (req.method === 'GET' && (m = /^\/apps\/(.+)\.png$/.exec(url))) {
+        var lp = launchPoints[decodeURIComponent(m[1])];
+        var icon = lp && (lp.extraLargeIcon || lp.largeIcon || lp.icon);
+        return icon ? file(res, icon.replace(/^file:\/\//, '')) : send(res, 404, { error: 'not found' });
+    }
+    if (req.method === 'GET' && url === '/apps') return apps(function (l) { send(res, 200, l); });
     if (req.method === 'GET' && url === '/config') return send(res, 200, config());
     if (req.method === 'GET' && url === '/wallpapers')
         return send(res, 200, readJson(DIR + '/wallpapers/index.json', { count: 0, accents: ['#e9a77f'] }));
@@ -198,9 +272,7 @@ http.createServer(function (req, res) {
             return send(res, 200, config());
         }
         if (url === '/launch' && typeof b.id === 'string')
-            return luna('luna://com.webos.applicationManager/launch', { id: b.id }, function (r) {
-                send(res, 200, { ok: !!(r && r.returnValue) });
-            });
+            return launch(b.id, function (ok) { send(res, 200, { ok: ok }); });
         if (url === '/apply') { send(res, 200, { ok: true }); return detached(['on']); }
         if (url === '/lg-home') { send(res, 200, { ok: true }); return detached(['off']); }
         send(res, 404, { error: 'not found' });

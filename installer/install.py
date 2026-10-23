@@ -146,10 +146,10 @@ def push_photos(conf):
 
 # ---- Pear's code ----
 
-def code_hash():
+def code_hash(mode):
     """Everything that, when changed, needs Home restarting."""
-    h = hashlib.sha256()
-    for d in ("qml", "tv", "icons"):
+    h = hashlib.sha256(mode.encode())
+    for d in ("qml", "tv", "icons", "web"):
         for f in sorted(os.listdir(os.path.join(HERE, d))):
             if not os.path.isfile(os.path.join(HERE, d, f)):
                 continue
@@ -161,14 +161,9 @@ def code_hash():
     return h.hexdigest()[:16]
 
 
-def push_code(conf, accents, force=False):
-    """Patch LG Home, send Pear's code and restart Home, if any of it changed."""
+def patched_home(conf, accents):
+    """LG Home's files, patched to load Pear (qml mode): ("files/...", bytes, mode)."""
     import patch_home
-    want = code_hash()
-    if not force and ssh(conf, f"cat {TV_DIR}/code.sha 2>/dev/null", check=False).strip() == want:
-        print("Pear's code on the TV is current; Home picks up settings and photos within a minute.")
-        return False
-
     print("Copying LG Home's files from the TV (they stay on your machine)...")
     # with Pear installed, its own copies are mounted over LG's; take them off
     # first (Home keeps running: it read its files when it started)
@@ -187,22 +182,42 @@ def push_code(conf, accents, force=False):
             "CONFIG": json.dumps(tv_config(conf)),
             "PHOTOS": json.dumps({"count": len(accents) - 1, "accents": accents}),
         })
-        entries = tree(tmp, "files")
+        return tree(tmp, "files")
+
+
+def push_code(conf, accents, force=False):
+    """Send Pear's code and restart Home, if any of it changed: patched into LG
+    Home where that's QML, else as an app of its own (installer/app.py)."""
+    import app
+    import icons
+    mode = app.home_kind(ssh, conf)
+    want = code_hash(mode)
+    if not force and ssh(conf, f"cat {TV_DIR}/code.sha 2>/dev/null", check=False).strip() == want:
+        print("Pear's code on the TV is current; Home picks up settings and photos within a minute.")
+        return False
+
+    entries = patched_home(conf, accents) if mode == "qml" else [("mode", b"app\n", 0o644)]
     for script in SCRIPTS:
         # LF only, whatever the checkout did: "#!/bin/sh\r" is "not found"
         with open(os.path.join(HERE, "tv", script), "rb") as f:
             entries.append((script, f.read().replace(b"\r\n", b"\n"), 0o755))
-    import icons
     entries += [("VERSION", (version() + "\n").encode(), 0o644), ("code.sha", (want + "\n").encode(), 0o644)]
     entries += [(f"icons/{name}.png", png, 0o644) for name, png in icons.files()]
 
     print("Installing on the TV...")
     ssh(conf, f"mkdir -p {TV_DIR} && cd {TV_DIR} && {{ [ -x ./pearwebos ] && ./pearwebos unmount; true; }} && "
-              "rm -rf files && tar xf -", stdin=tar_of(entries))
+              "rm -rf files mode && tar xf -", stdin=tar_of(entries))
+    if mode == "app":
+        print("  LG's Home here isn't QML (webOS 10?), so Pear goes in as an app of its own.")
+        ssh(conf, "cat > /tmp/pearwebos.ipk", stdin=app.ipk(version()))
+        out = ssh(conf, f"{TV_DIR}/pearwebos install-app /tmp/pearwebos.ipk 2>&1; s=$?; rm -f /tmp/pearwebos.ipk; exit $s",
+                  check=False)
+        if "installed" not in out:
+            sys.exit("Couldn't install Pear's app on the TV:\n  " + out.strip())
     # in the background, so a slow boot neither holds up nor waits on other hooks
     ssh(conf, f"rm -f {' '.join(OLD_HOOKS)}; printf '#!/bin/sh\\n# PearWebOS\\n"
               f"setsid {TV_DIR}/pearwebos boot </dev/null >/dev/null 2>&1 &\\n' > {HOOK} && chmod 755 {HOOK}")
-    print("Starting Pear Home (about 15 seconds)...")
+    print("Starting Pear Home" + (" (about 15 seconds)..." if mode == "qml" else "..."))
     out = ssh(conf, f"{TV_DIR}/pearwebos on 2>&1 | tail -1; {TV_DIR}/pearwebos settings; true")
     print("  " + out.strip())
     return True

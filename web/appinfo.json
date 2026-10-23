@@ -1,0 +1,15 @@
+{
+    "id": "org.pearwebos.home",
+    "version": "0.0.0",
+    "vendor": "PearWebOS",
+    "type": "web",
+    "main": "index.html",
+    "title": "Pear",
+    "icon": "icon.png",
+    "largeIcon": "largeIcon.png",
+    "iconColor": "#e9a77f",
+    "resolution": "1920x1080",
+    "disableBackHistoryAPI": true,
+    "handlesRelaunch": true,
+    "supportQuickStart": true
+}

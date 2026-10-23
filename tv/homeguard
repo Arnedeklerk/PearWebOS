@@ -1,6 +1,9 @@
 #!/bin/sh
 # homeguard: keep Home up instead of an untuned Live TV (PearWebOS).
 #
+# In app mode ($DIR/mode, webOS 10) Home is Pear's own app, and this is also
+# what puts it there: whenever LG's Home comes to the front, it opens Pear.
+#
 # Leaving an app, the screensaver or a power-on all fall back to Live TV,
 # which on a TV with no channels tuned says "Not Programmed". This follows the
 # foreground and, when nothing but Live TV (or nothing at all) is in front,
@@ -16,6 +19,15 @@ LOG=$DIR/homeguard.log
 LS=$DIR/luna-send-n
 FG='{"subscribe":true,"extraInfo":true}'
 LOCK=/tmp/pearwebos-homeguard.lock
+GUARD=1
+[ -f "$DIR/pear.conf" ] && . "$DIR/pear.conf"
+if [ "$(cat "$DIR/mode" 2>/dev/null)" = app ]; then
+    HOME_APP=org.pearwebos.home
+    SWAP=com.webos.app.home    # LG's Home, which Pear stands in for
+else
+    HOME_APP=com.webos.app.home
+    SWAP=
+fi
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"
@@ -25,25 +37,28 @@ log() {
 # app ids in front, from one getForegroundAppInfo reply
 front_ids() { grep -o '"appId":"[^"]*"' | sed 's/"appId":"//; s/"$//' | tr '\n' ' '; }
 
-# true when the screen would show only Live TV, or nothing
+# true when Home should be opened: the screen would show only Live TV, or
+# nothing (unless you watch Live TV), or LG's Home in app mode
 stranded() {
     case " $1 " in
-        *" com.webos.app.home "*) return 1 ;;
+        *" $HOME_APP "*) return 1 ;;
     esac
+    [ -n "$SWAP" ] && case " $1 " in *" $SWAP "*) return 0 ;; esac
+    [ "$GUARD" = 1 ] && [ ! -f "$DIR/allow-livetv" ] || return 1
     ids=$(echo "$1" | sed 's/com\.webos\.app\.livetv//g' | tr -d ' ')
     [ -z "$ids" ]
 }
 
 check() {
-    [ -f "$DIR/allow-livetv" ] && return
     # a beat for app switches to settle (leaving one app for another passes through "")
     # one check at a time: a burst of changes would open Home several times
     mkdir "$LOCK" 2>/dev/null || return
-    usleep 300000
+    # (LG's Home needs no beat: it's on screen until Pear covers it)
+    if [ -n "$SWAP" ] && case " $1 " in *" $SWAP "*) true ;; *) false ;; esac; then :; else usleep 300000; fi
     now=$($LS -n 1 luna://com.webos.applicationManager/getForegroundAppInfo '{"extraInfo":true}' | front_ids)
     if stranded "$now"; then
-        log "only [${now% }] in front; opening Home"
-        $LS -n 1 luna://com.webos.applicationManager/launch '{"id":"com.webos.app.home"}' >/dev/null
+        log "[${now% }] in front; opening Home"
+        $LS -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"$HOME_APP\"}" >/dev/null
     fi
     rmdir "$LOCK"
 }
@@ -69,7 +84,7 @@ while :; do
     while read -r line; do
         ids=$(echo "$line" | front_ids)
         [ -f "$DIR/debug" ] && log "front: [${ids% }]"
-        stranded "$ids" && check &
+        stranded "$ids" && check "$ids" &
     done
     sleep 5
 done

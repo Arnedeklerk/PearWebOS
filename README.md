@@ -21,7 +21,7 @@
 
 ## Get it
 
-You need an LG TV on **webOS 6** (2021 models), rooted with [Homebrew Channel](https://www.webosbrew.org/) with SSH turned on, and a computer with Python 3.
+You need an LG TV on **webOS 6** (2021 models; newer ones [in testing](docs/GUIDE.md#app-mode-webos-10)), rooted with [Homebrew Channel](https://www.webosbrew.org/) with SSH turned on, and a computer with Python 3.
 
 ```bash
 git clone https://github.com/Arnedeklerk/PearWebOS.git && cd PearWebOS

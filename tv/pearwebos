@@ -1,6 +1,12 @@
 #!/bin/sh
 # pearwebos: the on-TV side of PearWebOS.
 #
+# Two ways in, by what LG's Home is ($DIR/mode, written by the installer):
+#  - qml (webOS 6): Pear is mounted into LG Home, as below.
+#  - app (webOS 10, whose Home is Flutter): Pear is an app of its own,
+#    org.pearwebos.home (web/), and homeguard opens it whenever LG's Home
+#    comes to the front. Nothing of LG's is touched.
+#
 # Files under $DIR/files mirror LG Home's qml/ tree and are bind-mounted over
 # the stock ones; nothing on the read-only system changes, and `off` (or a
 # reboot with the hook removed) is stock LG Home again.
@@ -20,6 +26,7 @@
 #   pearwebos status
 #   pearwebos settings  the power-on settings chosen in setup
 #   pearwebos unmount   before replacing the files (the installer)
+#   pearwebos install-app <ipk> | remove-app   Pear's own app, in app mode
 
 DIR=/var/lib/pearwebos
 APP=/usr/palm/applications/com.webos.app.home/qml
@@ -28,6 +35,9 @@ STAMP=$DIR/checkpoint.stamp
 OFF=$DIR/disabled
 LOG=$DIR/pearwebos.log
 LS=$DIR/luna-send-n
+MODE=$(cat "$DIR/mode" 2>/dev/null)
+PEAR_APP=org.pearwebos.home
+PEAR_APP_DIR=/media/developer/apps/usr/palm/applications/$PEAR_APP
 
 # choices from `pear setup`
 GUARD=1 BOOT_TO_HOME=1 QUICK_START=1 NO_UPDATE_PROMPT=1
@@ -38,8 +48,8 @@ log() {
     tail -n 300 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
 }
 
-# relative paths of every Pear file
-pear_files() { (cd "$DIR/files" && find . -type f | sed 's|^\./||'); }
+# relative paths of every Pear file (none in app mode)
+pear_files() { [ -d "$DIR/files" ] && (cd "$DIR/files" && find . -type f | sed 's|^\./||'); }
 
 mounted() { grep -q " $1 " /proc/mounts; }
 
@@ -71,6 +81,69 @@ pear_id() { echo "$(home_pid) $([ -d "$CKPT" ] && stat -c '%Y-%i' "$CKPT" 2>/dev
 open_home() { $LS -n 1 luna://com.webos.applicationManager/launch '{"id":"com.webos.app.home"}' >/dev/null; }
 
 guard() { [ "$GUARD" = 1 ] && "$DIR/homeguard" "$1"; }
+
+# ---- app mode: Pear as its own app ----
+
+open_pear() { $LS -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"$PEAR_APP\"}" >/dev/null; }
+
+# through the same service Homebrew Channel installs with; done when the
+# app's files carry the new version (or after a minute)
+install_app() {
+    want=$(cat "$DIR/VERSION" 2>/dev/null)
+    /usr/bin/luna-send -i luna://com.webos.appInstallService/dev/install \
+        "{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"$1\",\"subscribe\":true}" >"$DIR/install.log" 2>&1 &
+    pid=$!
+    i=0
+    while [ $i -lt 60 ]; do
+        grep -q "\"version\": *\"$want\"" "$PEAR_APP_DIR/appinfo.json" 2>/dev/null && break
+        grep -qi '"returnValue": *false\|failed' "$DIR/install.log" && break
+        sleep 1; i=$((i + 1))
+    done
+    kill "$pid" 2>/dev/null
+    if grep -q "\"version\": *\"$want\"" "$PEAR_APP_DIR/appinfo.json" 2>/dev/null; then
+        log "app: $PEAR_APP $want installed"
+    else
+        log "app: install didn't finish: $(tr '\n' ' ' < "$DIR/install.log" | cut -c1-300)"
+        return 1
+    fi
+}
+
+remove_app() {
+    $LS -n 1 luna://com.webos.appInstallService/dev/remove "{\"id\":\"$PEAR_APP\"}" >/dev/null
+}
+
+app_on() {
+    rm -f "$OFF"
+    peard start
+    "$DIR/homeguard" start
+    open_pear
+    log "on: Pear's app up"
+}
+
+app_off() {
+    touch "$OFF"
+    "$DIR/homeguard" stop
+    peard stop
+    open_home
+    log "off: LG's Home"
+}
+
+# homeguard swaps LG's Home for Pear from its first look at the screen
+app_boot() {
+    [ -f "$OFF" ] && { log "boot: off"; return 0; }
+    peard start
+    "$DIR/homeguard" start
+    log "boot: Pear's app on watch"
+    boot_settings
+}
+
+app_status() {
+    [ -f "$OFF" ] && echo "state: off" || echo "state: on (app mode)"
+    v=$(grep -o '"version": *"[^"]*"' "$PEAR_APP_DIR/appinfo.json" 2>/dev/null | cut -d'"' -f4)
+    echo "app: ${v:-not installed}"
+    [ -f "$DIR/homeguard.pid" ] && kill -0 "$(cat "$DIR/homeguard.pid")" 2>/dev/null &&
+        echo "homeguard: running" || echo "homeguard: not running"
+}
 
 # peard: what Pear's Home asks for settings, photos, inputs and weather
 peard() {
@@ -208,12 +281,23 @@ cmd_status() {
     done
 }
 
+if [ "$MODE" = app ]; then
+    case "${1:-status}" in
+        on) app_on; exit ;;
+        off) app_off; exit ;;
+        boot) app_boot; exit ;;
+        status) app_status; exit ;;
+    esac
+fi
+
 case "${1:-status}" in
     on) cmd_on ;;
     off) cmd_off ;;
     boot) cmd_boot ;;
     status) cmd_status ;;
+    install-app) install_app "$2" ;;
+    remove-app) remove_app ;;
     settings) boot_settings ;;
     unmount) umount_all ;;
-    *) echo "usage: pearwebos on|off|boot|status|settings|unmount" >&2; exit 2 ;;
+    *) echo "usage: pearwebos on|off|boot|status|settings|unmount|install-app <ipk>|remove-app" >&2; exit 2 ;;
 esac

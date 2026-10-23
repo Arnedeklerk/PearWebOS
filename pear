@@ -102,7 +102,7 @@ def cmd_setup():
     preflight(conf)
     release = ssh(conf, "grep -o '\"webos_release\": *\"[^\"]*\"' /var/run/nyx/os_info.json | cut -d'\"' -f4", check=False).strip()
     print(f"  Connected. webOS {release or '?'}" + ("" if release.startswith("6.") else
-          "  (Pear is tested on webOS 6; on other versions it may refuse, safely)"))
+          "  (Pear is tested most on webOS 6; on newer TVs it installs as an app of its own)"))
     # answers changed on the TV become this run's defaults
     install.merge_from_tv(conf)
 
@@ -179,6 +179,7 @@ def cmd_uninstall():
     conf = load()
     preflight(conf)
     print(ssh(conf, f"[ -x {TV_DIR}/pearwebos ] && {TV_DIR}/pearwebos off 2>&1 | tail -1; "
+                    f"[ -f {TV_DIR}/mode ] && {TV_DIR}/pearwebos remove-app; "
                     f"rm -f {HOOK} {' '.join(OLD_HOOKS)}; rm -rf {TV_DIR}; echo 'PearWebOS removed; LG Home is back.'", check=False).strip())
     print("Settings Pear changed (power-on screen, Quick Start+, update prompt) are left as they are;\n"
           "change them back in the TV's own Settings if you want.")

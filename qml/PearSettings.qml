@@ -155,7 +155,10 @@ EditTile {
                 home.save({ inputs: shown });
                 break;
             }
-            var list = home.hiddenApps.slice();
+            // inputs are kept apart (config.inputs), so not saved as hidden
+            var list = home.hiddenApps.filter(function (id) {
+                return !home.inputTiles.some(function (t) { return t.id === id; });
+            });
             var at = list.indexOf(r.id);
             if (at > -1) list.splice(at, 1); else list.push(r.id);
             home.save({ hidden: list });

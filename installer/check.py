@@ -39,9 +39,28 @@ for f in ["pear"] + [os.path.join("installer", n) for n in sorted(os.listdir(os.
 for f in ("pearwebos", "homeguard", "luna-send-n"):
     r = subprocess.run(["sh", "-n", os.path.join(HERE, "tv", f)], capture_output=True, text=True)
     check(f"tv/{f}", r.returncode == 0, r.stderr.strip())
-for f in ("peard.js", "tvkey.js", "devices.js"):
-    r = subprocess.run(["node", "--check", os.path.join(HERE, "tv", f)], capture_output=True, text=True)
-    check(f"tv/{f}", r.returncode == 0, r.stderr.strip())
+for f in ("tv/peard.js", "tv/tvkey.js", "tv/devices.js", "web/home.js", "web/panels.js"):
+    r = subprocess.run(["node", "--check", os.path.join(HERE, f)], capture_output=True, text=True)
+    check(f, r.returncode == 0, r.stderr.strip())
+
+# Pear's own app (app mode, webOS 10): it packs, with its files where the TV looks
+try:
+    import app
+    pkg = app.ipk("9.9.9")
+    import tarfile as _t, gzip as _g, io as _io
+    assert pkg.startswith(b"!<arch>\n")
+    at, members = 8, {}
+    while at < len(pkg):
+        name, size = pkg[at:at + 16].decode().strip(), int(pkg[at + 48:at + 58])
+        members[name] = pkg[at + 60:at + 60 + size]
+        at += 60 + size + size % 2
+    names = _t.open(fileobj=_io.BytesIO(_g.decompress(members["data.tar.gz"]))).getnames()
+    root = f"./usr/palm/applications/{app.APP_ID}/"
+    missing = [f for f in ("appinfo.json", "index.html", "home.js", "panels.js", "pear.css", "icon.png") if root + f not in names]
+    check("web/ packs as an app", list(members) == ["debian-binary", "control.tar.gz", "data.tar.gz"] and not missing,
+          ", ".join(missing))
+except Exception as e:  # noqa: BLE001 (any of it failing is the finding)
+    check("web/ packs as an app", False, repr(e))
 
 # what's plugged in: inputs shaped as eim's getAllInputStatus reports them
 DEVICE_CASES = [
