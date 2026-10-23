@@ -18,6 +18,7 @@ PearWebOS changes nothing on the TV's system partition. It mounts three files ov
   ```bash
   python3 -m pip install --user pillow numpy
   ```
+  An Android phone works too, with [Termux](https://termux.dev): `pkg install python python-pillow python-numpy git openssh`.
 
 ## Tested on
 
@@ -26,8 +27,18 @@ PearWebOS changes nothing on the TV's system partition. It mounts three files ov
 | LG 65NANO886PB (2021 NanoCell) | 6.4.0 | 03.41.05 | Yes |
 | LG OLED65A1PTA (2021 OLED) | 6.5.0 | 03.51.16 | Yes |
 | LG 86UP80009LA (2021 UHD) | 6.5.3 | 03.53.45 | Yes |
+| LG OLED55B13LA (2021 OLED) | 6.5.3 | ? | Yes |
+| LG OLED77C1AUB (2021 OLED) | 6.5.3 | ? | Yes |
+| LG OLED77C44LA (2024 OLED) | 10.3.1 | 33.31.68 | No: Home is a Flutter app there |
 
 Tried it on another TV? Please [open an issue](https://github.com/Arnedeklerk/PearWebOS/issues/new) with the model, webOS version and firmware (Settings → General → About This TV), and whether it worked, so this table can grow.
+
+### Which webOS versions?
+
+- **webOS 6 (2021 TVs): yes.** That's what Pear is built for, and every report so far has worked.
+- **webOS 5 (2020): untested.** It might work. Setup checks before it changes anything, so trying is safe; please report back either way.
+- **webOS 4 and older: unlikely.** LG Home was built differently then.
+- **webOS 22 and newer, including 10: no.** LG Home there isn't QML any more (on webOS 10 it's a Flutter app), so Pear's approach can't apply. A separate launcher app might work one day; see [#9](https://github.com/Arnedeklerk/PearWebOS/issues/9).
 
 ## Install
 
@@ -38,11 +49,11 @@ ssh-copy-id root@<your-tv-ip>    # once; Homebrew Channel's default password is 
 ./pear setup
 ```
 
-`./pear setup` finds the TV on your network and asks a few questions: the name for the greeting, a 12 or 24 hour clock, whether you watch Live TV through an aerial, and three power-on choices. Then it installs. It takes about a minute.
+`./pear setup` finds the TV on your network and asks a few questions: the name for the greeting, a 12 or 24 hour clock, photo quality, whether you watch Live TV through an aerial, and three power-on choices. Then it installs. It takes about a minute.
 
 ## Your photos
 
-Put photos in `photos/` and run `./pear sync`. Each one is cropped to 16:9 at 1600×900 and gets a date colour picked from the photo itself. One is chosen at random whenever Home comes back after 15 minutes away. Your photos never leave your machine and your TV: the folder is ignored by git. Until you add your own, Pear comes with one to start: a rainy evening in Shibuya. To nudge a crop or a colour, see [photos/README.md](photos/README.md).
+Put photos in `photos/` and run `./pear sync`. Each one is cropped to 16:9 and gets a date colour picked from the photo itself. Photo quality is a setup choice: light (1600×900) or high (1920×1080). High is the most the TV can show, since LG's Home draws at 1080p even on a 4K panel. One is chosen at random whenever Home comes back after 15 minutes away. Your photos never leave your machine and your TV: the folder is ignored by git. Until you add your own, Pear comes with one to start: a rainy evening in Shibuya. To nudge a crop or a colour, see [photos/README.md](photos/README.md).
 
 ## Using it
 

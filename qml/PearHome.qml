@@ -51,6 +51,13 @@ FocusScope {
     readonly property string name: "@NAME@"
     readonly property string clockFormat: "@CLOCK@"
 
+    // Qt's "h" is still 24-hour unless AM/PM is shown, so 12-hour is made here
+    function clockText() {
+        if (clockFormat !== "12") return Qt.formatDateTime(now, "HH:mm");
+        var m = now.getMinutes();
+        return (now.getHours() % 12 || 12) + ":" + (m < 10 ? "0" : "") + m;
+    }
+
     property var dockApps: []
     property var drawerApps: []
     property bool drawer: false
@@ -206,9 +213,13 @@ FocusScope {
     Rectangle {
         anchors.fill: parent
         color: "#0c0c1a"
+        // only seen until the photo loads
+        visible: wallpaperImage.status !== Image.Ready
     }
 
     Image {
+        id: wallpaperImage
+
         anchors.fill: parent
         fillMode: Image.PreserveAspectCrop
         sourceSize.width: 1920
@@ -218,32 +229,15 @@ FocusScope {
         onStatusChanged: if (status === Image.Error && home.wallpaper > 0) home.wallpaper = 0
     }
 
-    // keeps the greeting readable over bright photos
-    Rectangle {
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: parent.height * 0.45
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: Qt.rgba(0.02, 0.02, 0.05, 0.55) }
-            GradientStop { position: 1.0; color: Qt.rgba(0.02, 0.02, 0.05, 0.0) }
-        }
-    }
+    // (the shading for the greeting and tiles is baked into the photos:
+    // full-screen layers are what a TV's GPU runs short of)
 
-    // darkens the lower half so tiles and titles read
-    Rectangle {
-        anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: Qt.rgba(0.03, 0.03, 0.07, 0.0) }
-            GradientStop { position: 0.45; color: Qt.rgba(0.03, 0.03, 0.07, 0.10) }
-            GradientStop { position: 1.0; color: Qt.rgba(0.02, 0.02, 0.05, 0.78) }
-        }
-    }
-
-    // and the whole page while the drawer is open
+    // darkens the page while the drawer is open
     Rectangle {
         anchors.fill: parent
         color: Qt.rgba(0.03, 0.03, 0.07, 0.82)
         opacity: home.drawer ? 1 : 0
+        visible: opacity > 0
         Behavior on opacity { NumberAnimation { duration: 300 } }
     }
 
@@ -358,7 +352,7 @@ FocusScope {
                 anchors.right: parent.right
                 anchors.rightMargin: r(110)
                 anchors.baseline: dateLine.baseline
-                text: Qt.formatDateTime(home.now, home.clockFormat)
+                text: home.clockText()
                 color: "#ffffff"
                 font.family: fontManager.smart_Light.family
                 font.weight: fontManager.smart_Light.weight
@@ -532,6 +526,8 @@ FocusScope {
             }
 
             RectangularGlow {
+                // drawn once and reused: scale and opacity don't redraw it
+                cached: true
                 anchors.fill: card
                 anchors.topMargin: home.r(14)
                 glowRadius: home.r(26)

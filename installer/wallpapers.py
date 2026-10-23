@@ -1,8 +1,8 @@
 """Background photos for the Pear Home.
 
 Every image in photos/ (jpg, png, webp) becomes wallpapers/<n>.jpg: cropped
-to 16:9 and saved at 1600x900, which is small on the TV and plenty for a
-backdrop under a shade. 0.jpg is always the rendered dusk landscape.
+to 16:9, shaded for the text and tiles on top, and saved at 1600x900
+("light") or 1920x1080 ("high"). 0.jpg is always the rendered dusk landscape.
 
 Each photo also gets a date colour: a light tint of its own most vivid
 colour, or a warm sandstone when that colour is sky blue (blue text on a blue
@@ -24,7 +24,9 @@ from PIL import Image
 
 from landscape import render as render_landscape
 
-SIZE = (1600, 900)
+# "light" keeps each photo small; "high" is the most LG Home can show, as it
+# draws at 1920x1080 whatever the panel (a 4K photo would be scaled down)
+QUALITY = {"light": ((1600, 900), 84), "high": ((1920, 1080), 92)}
 DEFAULT_ACCENT = "#e9a77f"
 WARM_FOR_BLUE = "#f2dfb5"
 EXTS = (".jpg", ".jpeg", ".png", ".webp")
@@ -62,18 +64,35 @@ def accent_for(im):
     return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
 
 
+def shade(im):
+    """Bake in the shading Pear's Home used to draw over every photo: dark at
+    the top under the greeting, darker towards the bottom under the tiles.
+    One full-screen layer for the TV to draw instead of three."""
+    w, h = im.size
+    v = np.linspace(0, 1, h)[:, None, None]
+    a = np.asarray(im, float)
+    # top: 0.55 at the edge, gone by 45% down
+    top = np.clip(1 - v / 0.45, 0, 1) * 0.55
+    a = a * (1 - top) + np.array([5, 5, 13.0]) * top
+    # bottom: 0 to 0.10 by 45% down, then to 0.78 at the bottom edge
+    bottom = np.where(v < 0.45, v / 0.45 * 0.10, 0.10 + (v - 0.45) / 0.55 * 0.68)
+    a = a * (1 - bottom) + np.array([6, 6, 15.0]) * bottom
+    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+
+
 SAMPLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples")
 
 
-def build(photos, out):
+def build(photos, out, quality="light"):
     """Write out/0.jpg .. N.jpg; returns the accents list (index = wallpaper)."""
+    size, q = QUALITY.get(quality, QUALITY["light"])
     if not photos_in(photos):
         photos = SAMPLES
     os.makedirs(out, exist_ok=True)
     for f in os.listdir(out):
         if f.endswith(".jpg"):
             os.remove(os.path.join(out, f))
-    render_landscape(SIZE).save(os.path.join(out, "0.jpg"), quality=86, optimize=True, progressive=True)
+    shade(render_landscape(size)).save(os.path.join(out, "0.jpg"), quality=q, optimize=True, progressive=True)
 
     overrides = {}
     for name in ("photos.json", "samples.json"):
@@ -85,8 +104,8 @@ def build(photos, out):
     for i, name in enumerate(photos_in(photos), 1):
         o = overrides.get(name, {})
         im = Image.open(os.path.join(photos, name)).convert("RGB")
-        im = crop_16_9(im, o.get("crop", 0.5)).resize(SIZE, Image.LANCZOS)
-        im.save(os.path.join(out, f"{i}.jpg"), quality=84, optimize=True, progressive=True)
+        im = crop_16_9(im, o.get("crop", 0.5)).resize(size, Image.LANCZOS)
         accents.append(o.get("accent") or accent_for(im))
+        shade(im).save(os.path.join(out, f"{i}.jpg"), quality=q, optimize=True, progressive=True)
         print(f"  {i:>2}. {name}  {accents[-1]}")
     return accents
