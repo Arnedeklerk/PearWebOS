@@ -59,6 +59,14 @@ FocusScope {
         api("GET", "/config", null, function (c) { if (c) config = c; });
         api("GET", "/wallpapers", null, function (w) { if (w && w.accents) photos = w; });
         api("GET", "/weather", null, function (w) { weather = w && w.temp !== undefined ? w : null; });
+        api("GET", "/inputs", null, function (l) {
+            var tiles = [];
+            for (var i = 1; l && i < l.length; i++)   // [0] is Live TV, already a tile
+                tiles.push({ id: l[i].id, title: l[i].label, iconColor: "#1d2433", input: true,
+                             largeIcon: "file:///var/lib/pearwebos/icons/input.png", pear: true });
+            // only when they changed, so the dock isn't rebuilt every minute
+            if (JSON.stringify(tiles) !== JSON.stringify(inputTiles)) inputTiles = tiles;
+        });
     }
 
     function save(changes) {
@@ -113,11 +121,21 @@ FocusScope {
         id: "com.webos.app.livetv", title: "Live TV", iconColor: "#1d2433",
         largeIcon: "file:///var/lib/pearwebos/icons/livetv.png", pear: true
     })
-    readonly property var hiddenApps: config.hidden || defaultHidden.concat(config.guard !== false ? [liveTv.id] : [])
+    // the TV's inputs (HDMI, AV), by the names given them in the TV's own
+    // settings; off Home unless picked in Apps on Home (config.inputs)
+    property var inputTiles: []
+    readonly property var hiddenApps: {
+        var hidden = config.hidden || defaultHidden.concat(config.guard !== false ? [liveTv.id] : []);
+        var shown = config.inputs || [];
+        for (var i = 0; i < inputTiles.length; i++)
+            if (shown.indexOf(inputTiles[i].id) < 0) hidden = hidden.concat([inputTiles[i].id]);
+        return hidden;
+    }
 
-    // every app Home can show, in order: Live TV, then LG's in Edit Home order
+    // every app Home can show, in order: Live TV, the inputs, then LG's in
+    // Edit Home order
     function apps() {
-        var list = [liveTv];
+        var list = [liveTv].concat(inputTiles);
         for (var i = 0; source && i < source.count; i++) {
             var e = source.get(i).entry;
             if (e && e.id) list.push(e);

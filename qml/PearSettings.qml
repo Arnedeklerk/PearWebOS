@@ -64,7 +64,7 @@ EditTile {
         for (var i = 0; i < all.length; i++) {
             var e = all[i];
             var hidden = home.hiddenApps.indexOf(e.id) > -1;
-            rows.push({ key: "app", id: e.id, label: e.title || e.id, value: hidden ? "Hidden" : "Shown", dim: hidden });
+            rows.push({ key: "app", id: e.id, input: !!e.input, label: e.title || e.id, value: hidden ? "Hidden" : "Shown", dim: hidden });
         }
         // a toggle rebuilds the list; stay on the row that was toggled
         var at = rowList.currentIndex;
@@ -147,6 +147,14 @@ EditTile {
         case "apps": page = "apps"; buildApps(); first(rowList); break;
         case "back": page = "main"; first(rowList); break;
         case "app":
+            if (r.input) {
+                // inputs are off Home by default, so what's kept is the shown ones
+                var shown = (home.config.inputs || []).slice();
+                var was = shown.indexOf(r.id);
+                if (was > -1) shown.splice(was, 1); else shown.push(r.id);
+                home.save({ inputs: shown });
+                break;
+            }
             var list = home.hiddenApps.slice();
             var at = list.indexOf(r.id);
             if (at > -1) list.splice(at, 1); else list.push(r.id);
@@ -169,6 +177,7 @@ EditTile {
     Connections {
         target: home
         onHiddenAppsChanged: if (settings.page === "apps") settings.buildApps()
+        onInputTilesChanged: if (settings.page === "apps") settings.buildApps()
     }
 
     ListView {

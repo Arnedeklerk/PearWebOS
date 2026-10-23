@@ -35,7 +35,7 @@ TOUCHES = [
     ("drift", "Photo slowly zooms in and out (keeps the TV redrawing; can stutter on some sets)?"),
 ]
 DEFAULTS = {"tv": "", "name": "", "clock": "24", "date": "intl", "wallpaper_quality": "light",
-            "entrance": True, "quiet": True, "drift": False, "hidden": None,
+            "entrance": True, "quiet": True, "drift": False, "hidden": None, "inputs": [],
             "weather": {"on": False, "place": "", "lat": None, "lon": None, "units": "c"},
             "guard": True, "boot_to_home": True, "quick_start": True, "no_update_prompt": True}
 

@@ -33,6 +33,7 @@ var DEFAULTS = {
     name: '', clock: '24', date: 'intl',
     entrance: true, quiet: true, drift: false,
     hidden: null,                // null: Pear's own list of LG promo apps
+    inputs: [],                  // inputs shown as tiles (off unless picked)
     weather: { on: false, place: '', lat: null, lon: null, units: 'c' },
     guard: true, boot_to_home: true, quick_start: true, no_update_prompt: true
 };

@@ -24,7 +24,7 @@ CACHE = os.path.join(HERE, ".cache")
 SCRIPTS = ("pearwebos", "homeguard", "luna-send-n", "tvkey.js", "peard.js")
 # what can be changed on the TV itself; the rest (the TV's address, photo
 # quality, where the weather is) only from here
-TV_SETTINGS = ("name", "clock", "date", "entrance", "quiet", "drift", "hidden", "weather",
+TV_SETTINGS = ("name", "clock", "date", "entrance", "quiet", "drift", "hidden", "inputs", "weather",
                "guard", "boot_to_home", "quick_start", "no_update_prompt")
 
 
@@ -193,7 +193,7 @@ def push_code(conf, accents, force=False):
     need_imaging()
     import icons
     entries += [("VERSION", (version() + "\n").encode(), 0o644), ("code.sha", (want + "\n").encode(), 0o644),
-                ("icons/livetv.png", icons.live_tv(), 0o644)]
+                ("icons/livetv.png", icons.live_tv(), 0o644), ("icons/input.png", icons.input(), 0o644)]
 
     print("Installing on the TV...")
     ssh(conf, f"mkdir -p {TV_DIR} && cd {TV_DIR} && {{ [ -x ./pearwebos ] && ./pearwebos unmount; true; }} && "

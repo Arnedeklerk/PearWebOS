@@ -116,6 +116,8 @@ LG's promo apps (LG Channels, Shop Time, Sports Alert and the like) are left off
 
 **Live TV** has its own tile, first in the dock. It's shown if you said you watch Live TV through an aerial, and hidden otherwise (it would only say "Not Programmed"); Apps on Home shows or hides it like any other.
 
+**Your inputs** (HDMI and AV) can have tiles too, named as they are in the TV's own input settings, so a port renamed "Xbox" shows as Xbox. They're off Home until you turn one on in **Apps on Home**. Inputs are also always one press away, in **Inputs** at the top right.
+
 ## Settings on the TV
 
 Press up from the dock and pick the cog.
@@ -127,7 +129,7 @@ Press up from the dock and pick the cog.
 | Show another photo | right now |
 | Rise in, quiet, slow zoom | the touches from setup |
 | Town, weather, units | type your town with the TV's keyboard and pick the match; weather on or off; °C or °F |
-| Apps on Home | every app, shown or hidden |
+| Apps on Home | every app and input, shown or hidden |
 | TV | never sit on an empty Live TV, power on to Home (off: the TV powers on to its last input), Quick Start+, hide LG's update prompt |
 | Restart Pear | re-applies Pear, as setup does |
 | Use LG's own Home | turns Pear off; `./pear on` from a computer brings it back |
