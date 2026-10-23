@@ -59,6 +59,33 @@ FocusScope {
         api("GET", "/config", null, function (c) { if (c) config = c; });
         api("GET", "/wallpapers", null, function (w) { if (w && w.accents) photos = w; });
         api("GET", "/weather", null, function (w) { weather = w && w.temp !== undefined ? w : null; });
+        refreshInputs();
+    }
+
+    // Input names can change in LG's Input Manager while Pear Home is running.
+    // Refresh them independently of the clock/weather refresh.
+    function refreshInputs() {
+        api("GET", "/inputs", null, function (list) {
+            if (!list) return;
+            var hdmi = [];
+            for (var i = 0; i < list.length; i++) {
+                var input = list[i];
+                if (!input || !input.inputId || !/^HDMI/i.test(input.inputId)) continue;
+                hdmi.push({
+                    id: "pear.input." + input.inputId,
+                    inputId: input.inputId,
+                    appId: input.id,
+                    title: input.label || input.inputId,
+                    label: input.label || input.inputId,
+                    iconColor: "#1d2433",
+                    largeIcon: "file:///var/lib/pearwebos/icons/livetv.png",
+                    pear: true,
+                    hdmi: true,
+                    plugged: !!input.plugged
+                });
+            }
+            externalInputs = hdmi;
+        });
     }
 
     function save(changes) {
@@ -115,9 +142,21 @@ FocusScope {
     })
     readonly property var hiddenApps: config.hidden || defaultHidden.concat(config.guard !== false ? [liveTv.id] : [])
 
-    // every app Home can show, in order: Live TV, then LG's in Edit Home order
+    // Populated dynamically from the TV's own EIM input list. No HDMI count
+    // or port IDs are hardcoded, so models with different port counts work.
+    property var externalInputs: []
+    // If Settings → Apps on Home is already open when the TV's input list
+    // arrives, refresh that list too. PearSettings builds its rows from
+    // home.apps(), so detected HDMI ports get the same Show/Hide toggle as Live TV.
+    onExternalInputsChanged: {
+        rebuildTimer.restart();
+        if (settingsPanel.page === "apps") settingsPanel.buildApps();
+    }
+
+    // every app Home can show: Live TV, detected HDMI ports, then LG's apps
     function apps() {
         var list = [liveTv];
+        for (var h = 0; h < externalInputs.length; h++) list.push(externalInputs[h]);
         for (var i = 0; source && i < source.count; i++) {
             var e = source.get(i).entry;
             if (e && e.id) list.push(e);
@@ -168,8 +207,9 @@ FocusScope {
 
     function launch(e) {
         if (!e) return;
-        // Pear's own tiles open through peard; LG's through LG Home
-        if (e.pear) api("POST", "/launch", { id: e.id }, null);
+        // HDMI tiles switch by the EIM input ID; Live TV uses its app ID.
+        if (e.inputId) api("POST", "/launch", { id: e.id, inputId: e.inputId }, null);
+        else if (e.pear) api("POST", "/launch", { id: e.id }, null);
         else interfaces.launchPoints.doLaunch(e);
     }
 
@@ -266,6 +306,14 @@ FocusScope {
         repeat: true
         triggeredOnStart: true
         onTriggered: home.tick()
+    }
+
+    // Poll HDMI names/availability without waiting for the once-per-minute clock tick.
+    Timer {
+        interval: 5000
+        running: home.visible
+        repeat: true
+        onTriggered: home.refreshInputs()
     }
 
     // ---- entrance: the page fades in and rises a little as Home appears ----
