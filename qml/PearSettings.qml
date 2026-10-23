@@ -60,10 +60,9 @@ EditTile {
 
     function buildApps() {
         var rows = [{ key: "back", label: "‹  Settings" }, { header: true, label: "OK shows or hides" }];
-        var src = home.source;
-        for (var i = 0; src && i < src.count; i++) {
-            var e = src.get(i).entry;
-            if (!e || !e.id) continue;
+        var all = home.apps();
+        for (var i = 0; i < all.length; i++) {
+            var e = all[i];
             var hidden = home.hiddenApps.indexOf(e.id) > -1;
             rows.push({ key: "app", id: e.id, label: e.title || e.id, value: hidden ? "Hidden" : "Shown", dim: hidden });
         }

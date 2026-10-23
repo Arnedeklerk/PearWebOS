@@ -94,6 +94,7 @@ Put photos in `photos/` and run `./pear photos`. They show within a minute, with
 - **When it changes:** a new photo is picked at random whenever Home comes back after 15 minutes away, which covers every time you turn the TV on.
 - **Starter photo:** until you add your own, Pear uses one: a rainy evening in Shibuya.
 - **Privacy:** your photos only go to your TV; the folder is ignored by git.
+- **Room:** `pear photos` checks the TV has space first, and refuses rather than leave it under 150 MB free (webOS keeps its settings in the same place and misbehaves when it's full). For lots of photos, choose light quality.
 
 To nudge a crop or a colour, see [photos/README.md](../photos/README.md).
 
@@ -113,6 +114,8 @@ The Magic Remote's pointer and wheel work too: point at a tile and click, or scr
 
 LG's promo apps (LG Channels, Shop Time, Sports Alert and the like) are left off the tiles. To show or hide any app, use **Apps on Home** in Settings.
 
+**Live TV** has its own tile, first in the dock. It's shown if you said you watch Live TV through an aerial, and hidden otherwise (it would only say "Not Programmed"); Apps on Home shows or hides it like any other.
+
 ## Settings on the TV
 
 Press up from the dock and pick the cog.
@@ -125,7 +128,7 @@ Press up from the dock and pick the cog.
 | Rise in, quiet, slow zoom | the touches from setup |
 | Town, weather, units | type your town with the TV's keyboard and pick the match; weather on or off; °C or °F |
 | Apps on Home | every app, shown or hidden |
-| TV | never sit on an empty Live TV, power on to Home, Quick Start+, hide LG's update prompt |
+| TV | never sit on an empty Live TV, power on to Home (off: the TV powers on to its last input), Quick Start+, hide LG's update prompt |
 | Restart Pear | re-applies Pear, as setup does |
 | Use LG's own Home | turns Pear off; `./pear on` from a computer brings it back |
 

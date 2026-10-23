@@ -106,7 +106,24 @@ FocusScope {
         "org.webosbrew.inputhook", "org.aabytt.webos.custom-screensaver-aerial",
         "com.amazoff.patcher"
     ]
-    readonly property var hiddenApps: config.hidden || defaultHidden
+    // Live TV isn't one of LG's launch points, so Pear adds it, first; it's
+    // hidden by default where there's no aerial (it would only say "Not
+    // Programmed")
+    readonly property var liveTv: ({
+        id: "com.webos.app.livetv", title: "Live TV", iconColor: "#1d2433",
+        largeIcon: "file:///var/lib/pearwebos/icons/livetv.png", pear: true
+    })
+    readonly property var hiddenApps: config.hidden || defaultHidden.concat(config.guard !== false ? [liveTv.id] : [])
+
+    // every app Home can show, in order: Live TV, then LG's in Edit Home order
+    function apps() {
+        var list = [liveTv];
+        for (var i = 0; source && i < source.count; i++) {
+            var e = source.get(i).entry;
+            if (e && e.id) list.push(e);
+        }
+        return list;
+    }
     onHiddenAppsChanged: rebuildTimer.restart()
 
     property var weather: null
@@ -136,13 +153,11 @@ FocusScope {
     readonly property var source: interfaces.launchPoints ? interfaces.launchPoints.launchPointsModel : null
 
     function rebuild() {
-        var dock = [], rest = [];
-        if (source) {
-            for (var i = 0; i < source.count; i++) {
-                var e = source.get(i).entry;
-                if (!e || !e.id || hiddenApps.indexOf(e.id) > -1) continue;
-                if (dock.length < columns) dock.push(e); else rest.push(e);
-            }
+        var dock = [], rest = [], all = apps();
+        for (var i = 0; i < all.length; i++) {
+            var e = all[i];
+            if (hiddenApps.indexOf(e.id) > -1) continue;
+            if (dock.length < columns) dock.push(e); else rest.push(e);
         }
         var d = dockList.currentIndex, g = grid.currentIndex;
         dockApps = dock;
@@ -152,7 +167,10 @@ FocusScope {
     }
 
     function launch(e) {
-        if (e) interfaces.launchPoints.doLaunch(e);
+        if (!e) return;
+        // Pear's own tiles open through peard; LG's through LG Home
+        if (e.pear) api("POST", "/launch", { id: e.id }, null);
+        else interfaces.launchPoints.doLaunch(e);
     }
 
     function openDrawer() {

@@ -146,8 +146,12 @@ cmd_off() {
 
 # the settings a TV needs to power on straight into Home
 boot_settings() {
-    [ "$BOOT_TO_HOME" = 1 ] &&
+    # off sets them back too: power-on then shows the last input, not Home
+    if [ "$BOOT_TO_HOME" = 1 ]; then
         $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv","welcomeFeature":"off","noSignalScreenSaver":"off","homeAutoLaunch":"on","homeAutoLaunchMode":"full"}}' >/dev/null
+    else
+        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv","homeAutoLaunch":"off"}}' >/dev/null
+    fi
     # Quick Start+: power-off sleeps, so power-on resumes Pear instead of
     # booting LG's stock Home
     [ "$QUICK_START" = 1 ] &&
