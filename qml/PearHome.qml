@@ -53,6 +53,14 @@ FocusScope {
         x.send(data ? JSON.stringify(data) : null);
     }
 
+    // tile colour by what's plugged in; anything unknown keeps the navy
+    readonly property var kindColors: ({
+        "switch": "#e60012", "playstation": "#0058c7", "xbox": "#107c10",
+        "appletv": "#2c2c2e", "stick": "#6f2da8", "streamer": "#0f766e",
+        "pc": "#374151", "soundbar": "#b45309", "disc": "#0e7490",
+        "settop": "#9d174d", "gamepad": "#4b5563"
+    })
+
     // settings changed on the TV or pushed from a computer, and new photos,
     // without restarting Home
     function refresh() {
@@ -62,7 +70,7 @@ FocusScope {
         api("GET", "/inputs", null, function (l) {
             var tiles = [];
             for (var i = 1; l && i < l.length; i++)   // [0] is Live TV, already a tile
-                tiles.push({ id: l[i].id, title: l[i].label, iconColor: "#1d2433", input: true, pear: true,
+                tiles.push({ id: l[i].id, title: l[i].label, iconColor: kindColors[l[i].kind] || "#1d2433", input: true, pear: true,
                              // what's plugged in, where the TV can tell; else the port
                              largeIcon: "file:///var/lib/pearwebos/icons/" + (l[i].kind || "input") + ".png" });
             // only when they changed, so the dock isn't rebuilt every minute
@@ -789,3 +797,4 @@ FocusScope {
     }
 
 }
+
