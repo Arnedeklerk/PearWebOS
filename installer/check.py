@@ -39,9 +39,48 @@ for f in ["pear"] + [os.path.join("installer", n) for n in sorted(os.listdir(os.
 for f in ("pearwebos", "homeguard", "luna-send-n"):
     r = subprocess.run(["sh", "-n", os.path.join(HERE, "tv", f)], capture_output=True, text=True)
     check(f"tv/{f}", r.returncode == 0, r.stderr.strip())
-for f in ("peard.js", "tvkey.js"):
+for f in ("peard.js", "tvkey.js", "devices.js"):
     r = subprocess.run(["node", "--check", os.path.join(HERE, "tv", f)], capture_output=True, text=True)
     check(f"tv/{f}", r.returncode == 0, r.stderr.strip())
+
+# what's plugged in: inputs shaped as eim's getAllInputStatus reports them
+DEVICE_CASES = [
+    ({"icon": "HDMI_1.png"}, {"name": "", "kind": ""}),
+    ({"icon": "hometheater.png", "subList": [{"id": "SIMPLINK", "uniqueId": 5, "osdName": "LG SOUND BAR"},
+                                             {"id": "URCU", "brandName": "LG"}]},
+     {"name": "LG SOUND BAR", "kind": "soundbar"}),
+    ({"spdVendorName": "SIE", "spdProductDescription": "PS5", "spdSourceDeviceInfo": "Game"},
+     {"name": "PlayStation 5", "kind": "playstation"}),
+    ({"spdVendorName": "Nintendo", "spdProductDescription": "Switch 2"}, {"name": "Nintendo Switch 2", "kind": "switch"}),
+    # a console through a receiver: the console, not the receiver
+    ({"subList": [{"id": "SIMPLINK", "uniqueId": 5, "osdName": "RX-V6A"},
+                  {"id": "SIMPLINK", "uniqueId": 4, "depth": 2, "osdName": "NintendoSwitch"}]},
+     {"name": "Nintendo Switch", "kind": "switch"}),
+    # the TV's broad icon doesn't beat a name that says more
+    ({"icon": "gameconsole.png", "forceIcon": True, "subList": [{"id": "SIMPLINK", "uniqueId": 4, "osdName": "PS5"}]},
+     {"name": "PlayStation 5", "kind": "playstation"}),
+    ({"spdVendorName": "Microsoft", "spdProductDescription": "Xbox Series X"}, {"name": "Xbox Series X", "kind": "xbox"}),
+    ({"spdVendorName": "OPPO UDP", "spdProductDescription": "-203", "spdSourceDeviceInfo": "Blu-Ray Disc"},
+     {"name": "OPPO UDP -203", "kind": "disc"}),
+    ({"icon": "roku.png"}, {"name": "", "kind": "stick"}),
+]
+r = subprocess.run(["node", "-e", "var d = require(process.argv[1]); process.stdout.write(JSON.stringify("
+                    "{got: JSON.parse(process.argv[2]).map(d.describe), kinds: d.KINDS}))",
+                    os.path.join(HERE, "tv", "devices.js"), json.dumps([c[0] for c in DEVICE_CASES])],
+                   capture_output=True, text=True)
+try:
+    out = json.loads(r.stdout)
+    wrong = [f"{c[0]} gave {g}" for c, g in zip(DEVICE_CASES, out["got"]) if g != c[1]]
+    check("tv/devices.js names what's plugged in", not wrong, "; ".join(wrong))
+    try:
+        sys.path.insert(0, os.path.join(HERE, "installer"))
+        import icons
+        missing = set(out["kinds"]) - set(icons.DEVICES)
+        check("an icon for every kind of device", not missing, ", ".join(sorted(missing)))
+    except ImportError:
+        check("an icon for every kind of device (needs Pillow)", False, "pip install pillow")
+except ValueError:
+    check("tv/devices.js names what's plugged in", False, r.stderr.strip())
 
 # QML: filled in as the installer would, both clock styles
 try:

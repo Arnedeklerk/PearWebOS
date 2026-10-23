@@ -21,7 +21,7 @@ from remote import HOOK, OLD_HOOKS, PEAR, TV_DIR, pull, ssh
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(HERE, ".cache")
-SCRIPTS = ("pearwebos", "homeguard", "luna-send-n", "tvkey.js", "peard.js")
+SCRIPTS = ("pearwebos", "homeguard", "luna-send-n", "tvkey.js", "peard.js", "devices.js")
 # what can be changed on the TV itself; the rest (the TV's address, photo
 # quality, where the weather is) only from here
 TV_SETTINGS = ("name", "clock", "date", "entrance", "quiet", "drift", "hidden", "inputs", "weather",
@@ -194,6 +194,7 @@ def push_code(conf, accents, force=False):
     import icons
     entries += [("VERSION", (version() + "\n").encode(), 0o644), ("code.sha", (want + "\n").encode(), 0o644),
                 ("icons/livetv.png", icons.live_tv(), 0o644), ("icons/input.png", icons.input(), 0o644)]
+    entries += [(f"icons/{kind}.png", icons.device(kind), 0o644) for kind in icons.DEVICES]
 
     print("Installing on the TV...")
     ssh(conf, f"mkdir -p {TV_DIR} && cd {TV_DIR} && {{ [ -x ./pearwebos ] && ./pearwebos unmount; true; }} && "

@@ -9,7 +9,8 @@
 //   GET  /wallpapers          {count, accents} for wallpapers/0..count.jpg
 //   GET  /weather             cached; refetched from Open-Meteo after 30 min
 //   GET  /places?name=...     towns by that name, for the weather (Open-Meteo)
-//   GET  /inputs              Live TV and the HDMI ports, from the TV
+//   GET  /inputs              Live TV and the HDMI ports, from the TV, with
+//                             what's plugged in where it says (devices.js)
 //   POST /launch {id}         open an app or input
 //   POST /apply               restart Home with Pear (picks up new QML)
 //   POST /lg-home             back to LG's own Home (`pearwebos off`)
@@ -22,6 +23,7 @@ var https = require('https');
 var fs = require('fs');
 var path = require('path');
 var child = require('child_process');
+var devices = require('./devices');
 
 var DIR = '/var/lib/pearwebos';
 var PORT = 47321;
@@ -143,7 +145,13 @@ function inputs(cb) {
         var list = [{ id: 'com.webos.app.livetv', label: 'Live TV', plugged: true }];
         ((r && r.devices) || []).forEach(function (d) {
             if (!/^HDMI|^AV|^COMP/.test(d.id || '')) return;
-            list.push({ id: d.appId, label: d.label, plugged: !!d.hdmiPlugIn });
+            var what = devices.describe(d);
+            var port = d.id.replace(/_.*/, '') + ' ' + d.port;
+            list.push({
+                id: d.appId, port: port, plugged: !!d.hdmiPlugIn, kind: what.kind,
+                // a name you gave it in the TV's settings, else what the device says
+                label: (d.modified && d.label) || what.name || d.label || port
+            });
         });
         cb(list);
     });

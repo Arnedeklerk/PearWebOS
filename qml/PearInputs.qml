@@ -1,5 +1,6 @@
 /*
- * PearWebOS: Inputs. Live TV and the HDMI ports, from the TV through peard;
+ * PearWebOS: Inputs. Live TV and the HDMI ports (named for what's plugged
+ * in, where the TV can tell), from the TV through peard;
  * OK switches to one. Mounted over Main/RecentTitle.qml, which LG Home never
  * loads; Pear uses it as RecentTitle { }.
  */
@@ -16,7 +17,9 @@ EditTile {
 
     // the rows, built from what peard reported
     readonly property var rows: list.length ? list.map(function (i) {
-        return { label: i.label, value: i.plugged ? "" : "Nothing connected", dim: !i.plugged, id: i.id };
+        // the port beside a device's name, so you know where it is
+        var port = i.port && i.port !== i.label ? i.port : "";
+        return { label: i.label, value: i.plugged ? port : "Nothing connected", dim: !i.plugged, id: i.id };
     }) : [{ label: "Looking for inputs...", dim: true, id: "" }]
 
     onActivated: {

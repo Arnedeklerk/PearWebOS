@@ -116,7 +116,7 @@ LG's promo apps (LG Channels, Shop Time, Sports Alert and the like) are left off
 
 **Live TV** has its own tile, first in the dock. It's shown if you said you watch Live TV through an aerial, and hidden otherwise (it would only say "Not Programmed"); Apps on Home shows or hides it like any other.
 
-**Your inputs** (HDMI and AV) can have tiles too, named as they are in the TV's own input settings, so a port renamed "Xbox" shows as Xbox. They're off Home until you turn one on in **Apps on Home**. Inputs are also always one press away, in **Inputs** at the top right.
+**Your inputs** (HDMI and AV) can have tiles too, named and drawn for what's plugged in: a Switch, PlayStation, Xbox, Apple TV, streaming stick, soundbar, PC and so on. Pear reads what the device tells the TV (its HDMI-CEC name, which needs SIMPLINK on, and the maker and model it sends with its picture); a name you give the input in the TV's settings wins. They're off Home until you turn one on in **Apps on Home**. Inputs are also always one press away, in **Inputs** at the top right.
 
 ## Settings on the TV
 

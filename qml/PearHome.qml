@@ -62,8 +62,9 @@ FocusScope {
         api("GET", "/inputs", null, function (l) {
             var tiles = [];
             for (var i = 1; l && i < l.length; i++)   // [0] is Live TV, already a tile
-                tiles.push({ id: l[i].id, title: l[i].label, iconColor: "#1d2433", input: true,
-                             largeIcon: "file:///var/lib/pearwebos/icons/input.png", pear: true });
+                tiles.push({ id: l[i].id, title: l[i].label, iconColor: "#1d2433", input: true, pear: true,
+                             // what's plugged in, where the TV can tell; else the port
+                             largeIcon: "file:///var/lib/pearwebos/icons/" + (l[i].kind || "input") + ".png" });
             // only when they changed, so the dock isn't rebuilt every minute
             if (JSON.stringify(tiles) !== JSON.stringify(inputTiles)) inputTiles = tiles;
         });
