@@ -184,4 +184,4 @@ It needs `pip install PyQt5`, and it runs on every push and pull request.
 
 ## License
 
-MIT; see [LICENSE](../LICENSE). PearWebOS is not affiliated with LG Electronics or Apple. webOS is a trademark of LG Electronics; Apple TV is a trademark of Apple Inc. Rooting your TV may void its warranty; use at your own risk.
+MIT; see [LICENSE](../LICENSE). The tile icons are [Tabler Icons](https://tabler.io/icons) (MIT, [icons/tabler](../icons/tabler)). PearWebOS is not affiliated with LG Electronics or Apple. webOS is a trademark of LG Electronics; Apple TV is a trademark of Apple Inc. Rooting your TV may void its warranty; use at your own risk.

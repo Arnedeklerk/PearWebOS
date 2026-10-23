@@ -149,8 +149,10 @@ def push_photos(conf):
 def code_hash():
     """Everything that, when changed, needs Home restarting."""
     h = hashlib.sha256()
-    for d in ("qml", "tv"):
+    for d in ("qml", "tv", "icons"):
         for f in sorted(os.listdir(os.path.join(HERE, d))):
+            if not os.path.isfile(os.path.join(HERE, d, f)):
+                continue
             with open(os.path.join(HERE, d, f), "rb") as fh:
                 h.update(f.encode() + fh.read())
     for f in ("installer/patch_home.py", "VERSION"):
@@ -190,11 +192,9 @@ def push_code(conf, accents, force=False):
         # LF only, whatever the checkout did: "#!/bin/sh\r" is "not found"
         with open(os.path.join(HERE, "tv", script), "rb") as f:
             entries.append((script, f.read().replace(b"\r\n", b"\n"), 0o755))
-    need_imaging()
     import icons
-    entries += [("VERSION", (version() + "\n").encode(), 0o644), ("code.sha", (want + "\n").encode(), 0o644),
-                ("icons/livetv.png", icons.live_tv(), 0o644), ("icons/input.png", icons.input(), 0o644)]
-    entries += [(f"icons/{kind}.png", icons.device(kind), 0o644) for kind in icons.DEVICES]
+    entries += [("VERSION", (version() + "\n").encode(), 0o644), ("code.sha", (want + "\n").encode(), 0o644)]
+    entries += [(f"icons/{name}.png", png, 0o644) for name, png in icons.files()]
 
     print("Installing on the TV...")
     ssh(conf, f"mkdir -p {TV_DIR} && cd {TV_DIR} && {{ [ -x ./pearwebos ] && ./pearwebos unmount; true; }} && "

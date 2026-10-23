@@ -72,13 +72,11 @@ try:
     out = json.loads(r.stdout)
     wrong = [f"{c[0]} gave {g}" for c, g in zip(DEVICE_CASES, out["got"]) if g != c[1]]
     check("tv/devices.js names what's plugged in", not wrong, "; ".join(wrong))
-    try:
-        sys.path.insert(0, os.path.join(HERE, "installer"))
-        import icons
-        missing = set(out["kinds"]) - set(icons.DEVICES)
-        check("an icon for every kind of device", not missing, ", ".join(sorted(missing)))
-    except ImportError:
-        check("an icon for every kind of device (needs Pillow)", False, "pip install pillow")
+    sys.path.insert(0, os.path.join(HERE, "installer"))
+    import icons
+    missing = [k for k in set(out["kinds"]) | set(icons.ICONS)
+               if k not in icons.ICONS or not os.path.exists(os.path.join(icons.DIR, k + ".png"))]
+    check("an icon for every kind of device", not missing, ", ".join(sorted(missing)))
 except ValueError:
     check("tv/devices.js names what's plugged in", False, r.stderr.strip())
 
