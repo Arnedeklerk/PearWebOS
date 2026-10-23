@@ -49,6 +49,7 @@ def input(size=192):
 
 
 # ---- what's plugged in, by the kind tv/devices.js finds ----
+# white only: the tile behind gives the colour (kindColours in PearHome.qml)
 
 def controller(d, n, w):
     """A game controller's outline, for the consoles that have no better shape:
@@ -69,10 +70,10 @@ def dot(d, n, x, y, r, fill="white"):
 
 def switch(d, n, w):
     d.rounded_rectangle((n * 0.33, n * 0.32, n * 0.67, n * 0.68), radius=n * 0.03, outline="white", width=w)
-    d.rounded_rectangle((n * 0.17, n * 0.32, n * 0.31, n * 0.68), radius=n * 0.07, fill="#ff4554")
-    d.rounded_rectangle((n * 0.69, n * 0.32, n * 0.83, n * 0.68), radius=n * 0.07, fill="#00c3e3")
-    dot(d, n, 0.24, 0.42, 0.03, "#1d2433")
-    dot(d, n, 0.76, 0.56, 0.03, "#1d2433")
+    d.rounded_rectangle((n * 0.17, n * 0.32, n * 0.30, n * 0.68), radius=n * 0.065, outline="white", width=w)
+    d.rounded_rectangle((n * 0.70, n * 0.32, n * 0.83, n * 0.68), radius=n * 0.065, outline="white", width=w)
+    dot(d, n, 0.235, 0.43, 0.026)
+    dot(d, n, 0.765, 0.56, 0.026)
 
 
 def playstation(d, n, w):
@@ -86,8 +87,8 @@ def playstation(d, n, w):
 
 def xbox(d, n, w):
     controller(d, n, w)
-    for x, y, c in ((0.65, 0.445, "#f2c500"), (0.61, 0.485, "#2d8cff"), (0.69, 0.485, "#ff453a"), (0.65, 0.525, "#3fc23a")):
-        dot(d, n, x, y, 0.022, c)
+    for x, y in ((0.65, 0.445), (0.61, 0.485), (0.69, 0.485), (0.65, 0.525)):
+        dot(d, n, x, y, 0.022)
     dot(d, n, 0.35, 0.47, 0.035)
 
 

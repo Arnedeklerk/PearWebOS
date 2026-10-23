@@ -62,7 +62,8 @@ FocusScope {
         api("GET", "/inputs", null, function (l) {
             var tiles = [];
             for (var i = 1; l && i < l.length; i++)   // [0] is Live TV, already a tile
-                tiles.push({ id: l[i].id, title: l[i].label, iconColor: "#1d2433", input: true, pear: true,
+                tiles.push({ id: l[i].id, title: l[i].label, iconColor: kindColours[l[i].kind] || "#1d2433",
+                             input: true, pear: true,
                              // what's plugged in, where the TV can tell; else the port
                              largeIcon: "file:///var/lib/pearwebos/icons/" + (l[i].kind || "input") + ".png" });
             // only when they changed, so the dock isn't rebuilt every minute
@@ -121,6 +122,13 @@ FocusScope {
     readonly property var liveTv: ({
         id: "com.webos.app.livetv", title: "Live TV", iconColor: "#1d2433",
         largeIcon: "file:///var/lib/pearwebos/icons/livetv.png", pear: true
+    })
+    // an input tile's colour, by what's plugged in (tv/devices.js); the port
+    // and anything unknown keep Live TV's navy
+    readonly property var kindColours: ({
+        switch: "#e60012", playstation: "#0058c7", xbox: "#107c10", appletv: "#2c2c2e",
+        stick: "#6f2da8", streamer: "#0f766e", pc: "#374151", soundbar: "#b45309",
+        disc: "#0e7490", settop: "#9d174d", gamepad: "#4b5563"
     })
     // the TV's inputs (HDMI, AV), by the names given them in the TV's own
     // settings; off Home unless picked in Apps on Home (config.inputs)
