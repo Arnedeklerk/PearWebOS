@@ -66,7 +66,10 @@ EditTile {
             var hidden = home.hiddenApps.indexOf(e.id) > -1;
             rows.push({ key: "app", id: e.id, label: e.title || e.id, value: hidden ? "Hidden" : "Shown", dim: hidden });
         }
+        // a toggle rebuilds the list; stay on the row that was toggled
+        var at = rowList.currentIndex;
         appRows = rows;
+        rowList.currentIndex = Math.max(0, Math.min(at, rows.length - 1));
     }
 
     // towns matching what was typed, for the weather
