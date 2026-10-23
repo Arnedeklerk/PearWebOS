@@ -147,7 +147,8 @@ FocusScope {
         var list = [liveTv].concat(inputTiles);
         for (var i = 0; source && i < source.count; i++) {
             var e = source.get(i).entry;
-            if (e && e.id) list.push(e);
+            // (Pear's own app, where it's installed to try app mode, isn't one)
+            if (e && e.id && e.id !== "org.pearwebos.home") list.push(e);
         }
         return list;
     }
