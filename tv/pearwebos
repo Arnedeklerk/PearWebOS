@@ -192,7 +192,7 @@ wait_snapshot() {
 # nothing but Live TV (or nothing) in front
 front_is_bare() {
     ids=$($LS -n 1 luna://com.webos.applicationManager/getForegroundAppInfo '{"extraInfo":true}' |
-          grep -o '"appId":"[^"]*"' | grep -v -e '"appId":"com.webos.app.livetv"' -e '"appId":""')
+          grep -o '"appId": *"[^"]*"' | grep -v -e '"appId": *"com.webos.app.livetv"' -e '"appId": *""')
     [ -z "$ids" ]
 }
 

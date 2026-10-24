@@ -169,19 +169,21 @@ i.base { display: inline-block; width: 0; height: 0; vertical-align: baseline; }
 .top .focused .disc { background: #fff; border-color: transparent; transform: scale(1.12); }
 .top .focused .disc svg { stroke: #14141c; fill: #14141c; }
 
-.button .label {
+/* the focused button's name, to its left (below, it would sit on the clock) */
+#topLabel {
     position: absolute;
-    top: 86px;
-    left: -40px;
-    right: -40px;
-    text-align: center;
+    right: 100%;
+    margin-right: -2px;
+    top: 0;
+    line-height: 72px;
+    white-space: nowrap;
     font-weight: 600;
-    font-size: 22px;
+    font-size: 26px;
     opacity: 0;
     transition: opacity 160ms;
 }
 
-.top .focused .label { opacity: 1; }
+.top #topLabel { opacity: 1; }
 
 /* ---- the dock ---- */
 

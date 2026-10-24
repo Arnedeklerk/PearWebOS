@@ -201,6 +201,7 @@ function showFocus() {
     stage.classList.toggle('top', f === 'top');
     var buttons = document.querySelectorAll('#topbar .button');
     for (var i = 0; i < buttons.length; i++) buttons[i].classList.toggle('focused', f === 'top' && i === home.topIndex);
+    $('topLabel').textContent = home.topIndex ? 'Settings' : 'Inputs';
     // keep the focused row of the drawer in view
     var row = Math.floor(home.gridIndex / COLUMNS), rows = Math.ceil(home.drawer.length / COLUMNS);
     var visible = Math.floor((734 - 36) / CELL_H);
@@ -520,8 +521,14 @@ function hidden() {
 }
 
 document.addEventListener('visibilitychange', function () { if (document.hidden) hidden(); else shown(); });
-// launched again while running: homeguard bringing Pear back over LG's Home
-document.addEventListener('webOSRelaunch', shown);
+// launched again while running: homeguard bringing Pear back over LG's Home.
+// The system brings it forward (appinfo has no handlesRelaunch); asking too
+// does no harm where it already has
+document.addEventListener('webOSRelaunch', function () {
+    var sys = window.webOSSystem || window.PalmSystem;
+    if (sys && sys.activate) sys.activate();
+    shown();
+});
 
 function fit() {
     stage.style.transform = 'scale(' + Math.min(innerWidth / 1920, innerHeight / 1080) + ')';

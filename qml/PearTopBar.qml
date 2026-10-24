@@ -40,6 +40,20 @@ FocusScope {
     Keys.onReturnPressed: press(index)
     Keys.onEnterPressed: press(index)
 
+    // the focused button's name, to its left (below, it would sit on the clock)
+    Text {
+        anchors.right: barRow.left
+        anchors.rightMargin: home.r(20)
+        anchors.verticalCenter: barRow.verticalCenter
+        text: topBar.buttons[topBar.index].label
+        color: "#ffffff"
+        opacity: topBar.activeFocus ? 1 : 0
+        font.family: fontManager.smart_SemiBold.family
+        font.weight: fontManager.smart_SemiBold.weight
+        font.pixelSize: home.r(26)
+        Behavior on opacity { NumberAnimation { duration: 160 } }
+    }
+
     Row {
         id: barRow
         spacing: home.r(22)
@@ -107,19 +121,6 @@ FocusScope {
                             }
                         }
                     }
-                }
-
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.bottom
-                    anchors.topMargin: home.r(14)
-                    text: modelData.label
-                    color: "#ffffff"
-                    opacity: button.focused ? 1 : 0
-                    font.family: fontManager.smart_SemiBold.family
-                    font.weight: fontManager.smart_SemiBold.weight
-                    font.pixelSize: home.r(22)
-                    Behavior on opacity { NumberAnimation { duration: 160 } }
                 }
 
                 MouseArea {

@@ -33,7 +33,8 @@ log() {
 }
 
 # app ids in front, from one getForegroundAppInfo reply
-front_ids() { grep -o '"appId":"[^"]*"' | sed 's/"appId":"//; s/"$//' | tr '\n' ' '; }
+# (spaced or not: webOS 10 may print `"appId": "..."`)
+front_ids() { grep -o '"appId": *"[^"]*"' | sed 's/"appId": *"//; s/"$//' | tr '\n' ' '; }
 
 # true when Home should be opened: the screen would show only Live TV, or
 # nothing (unless you watch Live TV), or LG's Home in app mode
@@ -83,6 +84,8 @@ log "started"
 while :; do
     /usr/bin/luna-send -i luna://com.webos.applicationManager/getForegroundAppInfo "$FG" 2>/dev/null |
     while read -r line; do
+        # a reply may come over several lines; only these say what's in front
+        case "$line" in *appId*|*foregroundAppInfo*) ;; *) continue ;; esac
         ids=$(echo "$line" | front_ids)
         [ -f "$DIR/debug" ] && log "front: [${ids% }]"
         stranded "$ids" && check "$ids" &

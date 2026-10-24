@@ -10,6 +10,5 @@
     "iconColor": "#e9a77f",
     "resolution": "1920x1080",
     "disableBackHistoryAPI": true,
-    "handlesRelaunch": true,
     "supportQuickStart": true
 }
