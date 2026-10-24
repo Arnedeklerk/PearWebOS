@@ -21,7 +21,7 @@
 
 ## Get it
 
-You need an LG TV on **webOS 6** (2021 models; newer ones [in testing](docs/GUIDE.md#app-mode-webos-10)), rooted with [Homebrew Channel](https://www.webosbrew.org/) with SSH turned on, and a computer with Python 3.
+You need a **rooted LG TV** ([Homebrew Channel](https://www.webosbrew.org/) with SSH turned on) and a computer with Python 3. Pear is made for **webOS 6** (2021 TVs). On newer TVs, webOS 10 included, it installs as an app of its own: that's new, so [tell us how it goes](https://github.com/Arnedeklerk/PearWebOS/issues/9). [Which TVs it's been tried on](docs/GUIDE.md#tested-on).
 
 ```bash
 git clone https://github.com/Arnedeklerk/PearWebOS.git && cd PearWebOS

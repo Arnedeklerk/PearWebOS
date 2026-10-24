@@ -38,7 +38,7 @@ Tried it on another TV? Please [open an issue](https://github.com/Arnedeklerk/Pe
 
 You need:
 
-- An LG TV on **webOS 6**, **rooted** with [Homebrew Channel](https://www.webosbrew.org/), and **SSH turned on** in Homebrew Channel's settings. On a firmware whose Home differs, setup stops before installing anything.
+- An LG TV, **rooted** with [Homebrew Channel](https://www.webosbrew.org/), and **SSH turned on** in Homebrew Channel's settings. webOS 6 is what Pear is made for; newer TVs get it [as an app of its own](#app-mode-webos-10). If something on the TV isn't as setup expects, it stops before installing anything.
 - A computer on the same network, with Python 3, Pillow and numpy.
 
 **Mac or Linux**
