@@ -16,9 +16,10 @@
 #  - a relaunch restores the CRIU snapshot in $CKPT, which the app manager
 #    retakes after a cold start with whatever is mounted then;
 #  - a full boot restores LG's quick-start image, which holds stock Home.
-# $STAMP records the Home process started with Pear in, and in which boot. If
-# the Home running at boot is not that one, it came from LG's image and is
-# rebuilt.
+# So every boot rebuilds Home with Pear. (The hook runs only on a real boot,
+# not a Quick Start+ resume. Nothing else tells the two apart: the image
+# carries the same pid, snapshot and even kernel boot_id every time.)
+# $STAMP records the Home Pear last started, for `status`.
 #
 #   pearwebos on      mount, cold-start Home, check it came up
 #   pearwebos off     unmount, cold-start stock Home, and stay off at boot
@@ -75,8 +76,7 @@ home_pid() { ps -eo pid,args | grep '[/]usr/bin/com.webos.app.home' | awk '{prin
 # the same order, so LG's stock Home often gets the very pid Pear's had, and
 # looked like it (#13). The boot id is new at every boot, and a full boot
 # always brings LG's own Home; Quick Start+ resumes keep it.
-boot_id() { cut -c1-8 /proc/sys/kernel/random/boot_id 2>/dev/null; }
-pear_id() { echo "$(home_pid) $([ -d "$CKPT" ] && stat -c '%Y-%i' "$CKPT" 2>/dev/null) $(boot_id)"; }
+pear_id() { echo "$(home_pid) $([ -d "$CKPT" ] && stat -c '%Y-%i' "$CKPT" 2>/dev/null)"; }
 
 open_home() { $LS -n 1 luna://com.webos.applicationManager/launch '{"id":"com.webos.app.home"}' >/dev/null; }
 
@@ -250,14 +250,9 @@ cmd_boot() {
     [ -f "$OFF" ] && { log "boot: off"; return 0; }
     mount_all
     peard start
-    # Pear first, so the stock Home is on screen as briefly as possible
-    if [ -f "$STAMP" ] && [ "$(pear_id)" = "$(cat "$STAMP")" ]; then
-        log "boot: Home already carries Pear"
-        guard start
-        boot_settings
-        return 0
-    fi
-    log "boot: Home is stock ($(pear_id)); rebuilding with Pear"
+    # a boot always brings LG's stock Home: rebuild it with Pear at once, so
+    # the stock one is on screen as briefly as possible
+    log "boot: rebuilding Home with Pear ($(pear_id))"
     # the files are mounted above; Pear is on screen once cold_start returns
     cold_start && guard start
     # bookkeeping, after Pear is already showing

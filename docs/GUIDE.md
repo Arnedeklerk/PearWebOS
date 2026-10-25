@@ -23,7 +23,7 @@ Everything beyond [the README](../README.md).
 | LG 86UP80009LA (2021 UHD) | 6.5.3 | 03.53.45 | Yes |
 | LG OLED55B13LA (2021 OLED) | 6.5.3 | ? | Yes |
 | LG OLED77C1AUB (2021 OLED) | 6.5.3 | 03.53.45 | Yes |
-| LG OLED77C44LA (2024 OLED) | 10.3.1 | 33.31.68 | Not with 0.4; 0.5 installs Pear as its own app there ([#9](https://github.com/Arnedeklerk/PearWebOS/issues/9)) |
+| LG OLED77C44LA (2024 OLED) | 10.3.1 | 33.31.68 | Yes, as its own app (0.5.1 and later; [#9](https://github.com/Arnedeklerk/PearWebOS/issues/9)) |
 
 Tried it on another TV? Please [open an issue](https://github.com/Arnedeklerk/PearWebOS/issues/new) with the model, webOS version and firmware (Settings → General → About This TV), and whether it worked.
 
@@ -32,7 +32,7 @@ Tried it on another TV? Please [open an issue](https://github.com/Arnedeklerk/Pe
 - **webOS 6 (2021 TVs): yes.** That's what Pear is built for, and every report so far has worked.
 - **webOS 5 (2020): untested.** It might work. Setup checks before it changes anything, so trying is safe; please report back either way.
 - **webOS 4 and older: unlikely.** LG Home was built differently then.
-- **webOS 22 and newer, including 10: in testing.** LG Home there isn't QML any more (on webOS 10 it's a Flutter app), so Pear can't go inside it. Instead setup installs Pear as an app of its own and opens it whenever LG's Home comes up, at power-on and when you press Home. See [App mode](#app-mode-webos-10), and please report how it goes on [#9](https://github.com/Arnedeklerk/PearWebOS/issues/9).
+- **webOS 22 and newer: works on webOS 10, the rest untested.** LG Home there isn't QML any more (on webOS 10 it's a Flutter app), so Pear can't go inside it. Instead setup installs Pear as an app of its own and opens it whenever LG's Home comes up, at power-on and when you press Home. See [App mode](#app-mode-webos-10), and please report how it goes on [#9](https://github.com/Arnedeklerk/PearWebOS/issues/9).
 
 ## Install
 
