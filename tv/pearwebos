@@ -196,6 +196,28 @@ front_is_bare() {
     [ -z "$ids" ]
 }
 
+# the app the TV is showing under Home (Live TV, an input, an app), if any
+front_app() {
+    $LS -n 1 luna://com.webos.applicationManager/getForegroundAppInfo '{"extraInfo":true}' |
+        grep -o '"appId": *"[^"]*"' | sed 's/"appId": *"//; s/"$//' | grep -v -e '^$' -e '^com.webos.app.home$' | head -1
+}
+
+# Restarting Home shows it. With "Power on to Home" off the TV should stay on
+# what it powered on to, so that is opened again over Home (within a few
+# seconds of boot, so a Home pressed for later stays)
+keep_front() {
+    i=0
+    while [ $i -lt 10 ]; do
+        a=$(front_app)
+        if [ -n "$a" ]; then
+            $LS -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"$a\"}" >/dev/null
+            log "boot: back to $a (power on to Home is off)"
+            return 0
+        fi
+        usleep 500000; i=$((i + 1))
+    done
+}
+
 go_stock() {
     umount_all
     cold_start && wait_snapshot
@@ -255,6 +277,7 @@ cmd_boot() {
     log "boot: rebuilding Home with Pear ($(pear_id))"
     # the files are mounted above; Pear is on screen once cold_start returns
     cold_start && guard start
+    [ "$BOOT_TO_HOME" = 1 ] || keep_front
     # bookkeeping, after Pear is already showing
     if wait_snapshot; then
         pear_id > "$STAMP"
