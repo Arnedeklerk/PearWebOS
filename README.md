@@ -42,7 +42,7 @@ Setup finds your TV, asks a few questions and installs, in about a minute. On Wi
 | OK | open |
 | hold OK | rearrange your apps |
 
-Add your photos to `photos/`, then run `./pear photos`. To get the latest Pear, run `./pear update`.
+Add your photos to `photos/`, then run `./pear photos`. To get the latest Pear, pick **Update Pear** in Settings on the TV, or run `./pear update`.
 
 ## More
 

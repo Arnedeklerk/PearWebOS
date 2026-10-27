@@ -94,6 +94,7 @@ Put photos in `photos/` and run `./pear photos`. They show within a minute, with
 - **When it changes:** a new photo is picked at random whenever Home comes back after 15 minutes away, which covers every time you turn the TV on.
 - **Starter photo:** until you add your own, Pear uses one: a rainy evening in Shibuya.
 - **Privacy:** your photos only go to your TV; the folder is ignored by git.
+- **Only what changed:** a sync sends photos only when `photos/` changed, and builds only the new ones (the rest are kept in `.cache/`), so two hundred photos cost nothing after the first time.
 - **Room:** `pear photos` checks the TV has space first, and refuses rather than leave it under 150 MB free (webOS keeps its settings in the same place and misbehaves when it's full). For lots of photos, choose light quality.
 
 To nudge a crop or a colour, see [photos/README.md](../photos/README.md).
@@ -131,6 +132,7 @@ Press up from the dock and pick the cog.
 | Town, weather, units | type your town with the TV's keyboard and pick the match; weather on or off; °C or °F |
 | Apps on Home | every app and input, shown or hidden |
 | TV | never sit on an empty Live TV, power on to Home (off: the TV powers on to its last input), Quick Start+, hide LG's update prompt |
+| Update Pear | when there's a new release: the TV downloads and installs it itself, no computer needed |
 | Restart Pear | re-applies Pear, as setup does |
 | Use LG's own Home | turns Pear off; `./pear on` from a computer brings it back |
 
@@ -140,7 +142,7 @@ Press up from the dock and pick the cog.
 ./pear setup       find the TV, ask, install
 ./pear sync        push changed photos, settings and code (restarts Home only for code)
 ./pear photos      push the photos in photos/, no restart
-./pear update      get the latest PearWebOS and put it on the TV
+./pear update      get the latest PearWebOS and put it on the TV (or Settings > Update Pear on the TV)
 ./pear status      what's running on the TV, and which version
 ./pear on | off    Pear Home, or LG's own
 ./pear shot        screenshot the TV to docs/screenshot.jpg

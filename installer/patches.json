@@ -1,0 +1,52 @@
+{
+  "about": "How Pear goes into LG Home (webOS 6). Read by installer/patch_home.py on your computer and tv/update.js on the TV. Each edit's `old` must match exactly once; `optional` ones may be absent; `end` inserts before the file's final closing brace.",
+  "app": "/usr/palm/applications/com.webos.app.home/qml",
+  "pear_files": {
+    "UserInterfaceLayer/Containers/Main/GradationBG.qml": "PearHome.qml",
+    "UserInterfaceLayer/Containers/Main/RecentBG.qml": "PearBackdrop.qml",
+    "UserInterfaceLayer/Containers/Main/EditTile.qml": "PearPanel.qml",
+    "UserInterfaceLayer/Containers/Main/RecentTitle.qml": "PearInputs.qml",
+    "UserInterfaceLayer/Containers/Main/PromotionBG.qml": "PearSettings.qml",
+    "UserInterfaceLayer/Containers/Main/AIBoardIntro.qml": "PearTopBar.qml",
+    "UserInterfaceLayer/Containers/Main/AdLoadingImage.qml": "PearTile.qml"
+  },
+  "patches": {
+    "UserInterfaceLayer/Containers/MainView.qml": [
+      {
+        "why": "LG's views stay loaded (and show in Edit Home) so launching, ordering and editing keep working; Pear draws over them",
+        "old": "        id: shelfListContainer\n\n        objectName: \"shelfListContainer\"\n",
+        "new": "        id: shelfListContainer\n\n        objectName: \"shelfListContainer\"\n\n        opacity: skinHome.skinActive ? 0 : 1\n"
+      },
+      {
+        "why": "whatever LG hands focus to lands on its ribbon; send it to Pear instead",
+        "old": "            onActiveFocusChanged: {\n                if(activeFocus) {\n                    appListLoader.forceActiveFocus();\n                    if(systemProperties.isTopShelfGuide) {",
+        "new": "            onActiveFocusChanged: {\n                if(activeFocus) {\n                    if(skinHome.skinActive) skinHome.forceActiveFocus();\n                    else appListLoader.forceActiveFocus();\n                    if(systemProperties.isTopShelfGuide) {"
+      },
+      {
+        "why": "LG's scroll indicator stays hidden under Pear (webOS 6.5 has none)",
+        "old": "        visible: topArea.topShelfLoaded && shelfListContainer.state === \"app\" && !uiController.isEditMode",
+        "new": "        visible: !skinHome.skinActive && topArea.topShelfLoaded && shelfListContainer.state === \"app\" && !uiController.isEditMode",
+        "optional": true
+      },
+      {
+        "why": "Pear's Home, loaded over LG's just before MainView's closing brace",
+        "end": true,
+        "new": "    // PearWebOS: an Apple TV style Home over LG's (which stays loaded beneath it)\n    Loader {\n        id: skinHome\n\n        property bool skinActive: status === Loader.Ready && !uiController.isEditMode\n\n        anchors.fill: parent\n        z: 50\n        visible: skinActive\n        focus: skinActive\n        source: \"Main/GradationBG.qml\"\n\n        // if Pear fails to load, LG's Home shows; say why in a corner\n        onStatusChanged: {\n            if(status === Loader.Error) {\n                var c = Qt.createComponent(source);\n                skinError.text = \"PearWebOS: \" + c.errorString();\n            }\n        }\n\n        // LG moves focus around after these settle, so take it back a beat later\n        Timer {\n            id: skinRefocus\n            interval: 350\n            onTriggered: if(skinHome.skinActive) skinHome.item.takeFocus()\n        }\n\n        Connections {\n            target: uiController\n            ignoreUnknownSignals: true\n            onHomeShownChanged: {\n                if(uiController.homeShown && skinHome.skinActive) {\n                    if(skinHome.item.drawer) skinHome.item.closeDrawer();\n                    skinHome.item.takeFocus();\n                    skinRefocus.restart();\n                }\n            }\n            onIsEditModeChanged: {\n                if(!uiController.isEditMode) skinRefocus.restart();\n            }\n        }\n    }\n\n    Text {\n        id: skinError\n        z: 200\n        anchors.left: parent.left\n        anchors.bottom: parent.bottom\n        anchors.margins: 8\n        color: \"#ff8080\"\n        font.pixelSize: 14\n        visible: text !== \"\"\n    }\n\n"
+      }
+    ],
+    "UserInterfaceLayer/UIController.qml": [
+      {
+        "why": "power-on opens the full Home and leaves it up, instead of a half Home that closes itself after 8 seconds",
+        "old": "                } else {\n                    root.isAutoLaunch = true;\n                    root.currentMode = \"half\";\n                }",
+        "new": "                } else {\n                    root.currentMode = \"main\";\n                }",
+        "optional": true
+      },
+      {
+        "why": "the same, for the other way into a half Home",
+        "old": "                if(root.currentMode === \"main\") return;\n                root.isAutoLaunch = true;\n                root.currentMode = \"half\";",
+        "new": "                if(root.currentMode === \"main\") return;\n                root.currentMode = \"main\";",
+        "optional": true
+      }
+    ]
+  }
+}

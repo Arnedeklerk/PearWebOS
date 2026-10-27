@@ -14,10 +14,15 @@ where crop says where the 16:9 band sits in a taller photo (0 top, 1 bottom).
 
 With photos/ empty, the samples in installer/samples are used instead, so a
 fresh install has something besides the landscape.
+
+Built photos are kept in .cache/wallpapers, by what they were made from, so
+adding one photo to two hundred builds one (the rest come from the cache).
 """
 import colorsys
+import hashlib
 import json
 import os
+import shutil
 
 import numpy as np
 from PIL import Image
@@ -80,7 +85,53 @@ def shade(im):
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
 
 
-SAMPLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples")
+HERE = os.path.dirname(os.path.abspath(__file__))
+SAMPLES = os.path.join(HERE, "samples")
+CACHE = os.path.join(os.path.dirname(HERE), ".cache", "wallpapers")
+
+
+def _code():
+    """What a built photo also depends on: how it's built."""
+    h = hashlib.sha256()
+    for f in ("wallpapers.py", "landscape.py"):
+        with open(os.path.join(HERE, f), "rb") as fh:
+            h.update(fh.read())
+    return h.hexdigest()
+
+
+def _overrides(photos):
+    overrides = {}
+    for name in ("photos.json", "samples.json"):
+        if os.path.exists(os.path.join(photos, name)):
+            with open(os.path.join(photos, name)) as f:
+                overrides.update(json.load(f))
+    return overrides
+
+
+def source(photos, quality="light"):
+    """A fingerprint of everything the wallpapers would be built from (names,
+    sizes and times, overrides, quality, the code), to skip an unchanged set
+    without opening a photo."""
+    if not photos_in(photos):
+        photos = SAMPLES
+    h = hashlib.sha256(f"{quality}|{_code()}|{json.dumps(_overrides(photos), sort_keys=True)}".encode())
+    for name in photos_in(photos):
+        st = os.stat(os.path.join(photos, name))
+        h.update(f"|{name}|{st.st_size}|{st.st_mtime_ns}".encode())
+    return h.hexdigest()[:16]
+
+
+def _cached(key, make):
+    """(jpg path, accent) for key, built by make(path) -> accent when new."""
+    os.makedirs(CACHE, exist_ok=True)
+    jpg, txt = os.path.join(CACHE, key + ".jpg"), os.path.join(CACHE, key + ".accent")
+    if not (os.path.exists(jpg) and os.path.exists(txt)):
+        accent = make(jpg + ".tmp")
+        os.replace(jpg + ".tmp", jpg)
+        with open(txt, "w") as f:
+            f.write(accent)
+    with open(txt) as f:
+        return jpg, f.read().strip()
 
 
 def build(photos, out, quality="light"):
@@ -92,20 +143,32 @@ def build(photos, out, quality="light"):
     for f in os.listdir(out):
         if f.endswith(".jpg"):
             os.remove(os.path.join(out, f))
-    shade(render_landscape(size)).save(os.path.join(out, "0.jpg"), quality=q, optimize=True, progressive=True)
+    code = _code()
 
-    overrides = {}
-    for name in ("photos.json", "samples.json"):
-        if os.path.exists(os.path.join(photos, name)):
-            with open(os.path.join(photos, name)) as f:
-                overrides.update(json.load(f))
+    def landscape(path):
+        shade(render_landscape(size)).save(path, "JPEG", quality=q, optimize=True, progressive=True)
+        return DEFAULT_ACCENT
+    jpg, _ = _cached(hashlib.sha256(f"landscape|{quality}|{code}".encode()).hexdigest()[:24], landscape)
+    shutil.copyfile(jpg, os.path.join(out, "0.jpg"))
 
-    accents = [DEFAULT_ACCENT]
+    overrides = _overrides(photos)
+    accents, built = [DEFAULT_ACCENT], 0
     for i, name in enumerate(photos_in(photos), 1):
         o = overrides.get(name, {})
-        im = Image.open(os.path.join(photos, name)).convert("RGB")
-        im = crop_16_9(im, o.get("crop", 0.5)).resize(size, Image.LANCZOS)
-        accents.append(o.get("accent") or accent_for(im))
-        shade(im).save(os.path.join(out, f"{i}.jpg"), quality=q, optimize=True, progressive=True)
+        with open(os.path.join(photos, name), "rb") as f:
+            key = hashlib.sha256(f.read() + f"|{quality}|{o.get('crop', 0.5)}|{code}".encode()).hexdigest()[:24]
+
+        def make(path, name=name, o=o):
+            nonlocal built
+            built += 1
+            im = Image.open(os.path.join(photos, name)).convert("RGB")
+            im = crop_16_9(im, o.get("crop", 0.5)).resize(size, Image.LANCZOS)
+            shade(im).save(path, "JPEG", quality=q, optimize=True, progressive=True)
+            return accent_for(im)
+        jpg, accent = _cached(key, make)
+        shutil.copyfile(jpg, os.path.join(out, f"{i}.jpg"))
+        accents.append(o.get("accent") or accent)
         print(f"  {i:>2}. {name}  {accents[-1]}")
+    if built < len(accents) - 1:
+        print(f"  ({built} built, {len(accents) - 1 - built} from the cache)")
     return accents

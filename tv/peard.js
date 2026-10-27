@@ -15,6 +15,10 @@
 //   GET  /inputs              Live TV and the HDMI ports, from the TV, with
 //                             what's plugged in where it says (devices.js)
 //   POST /launch {id}         open an app, input or launch point
+//   GET  /update              {current, latest, available, state, message}:
+//                             a new release, checked every 6 hours, and how
+//                             an update in progress is going (update.js)
+//   POST /update              get the latest release and install it
 //   POST /apply               restart Home with Pear (picks up new QML)
 //   POST /lg-home             back to LG's own Home (`pearwebos off`)
 //
@@ -200,6 +204,40 @@ function launch(id, cb) {
     luna('luna://com.webos.applicationManager/launch', payload, function (r) { cb(!!(r && r.returnValue)); });
 }
 
+// ---- updating (update.js does the work) ----
+
+var release = { at: 0, data: null };
+
+function updateState() {
+    var s = readJson(DIR + '/update.json', {});
+    // an update that went quiet (the TV slept through it, say) isn't running
+    if (s.state === 'updating' && Date.now() - s.at > 10 * 60 * 1000) s = { state: 'failed', message: 'It stopped part way' };
+    return s;
+}
+
+function update(cb) {
+    var reply = function () {
+        var out = JSON.parse(JSON.stringify(release.data || { current: VERSION }));
+        var s = updateState();
+        out.state = s.state || '';
+        out.message = s.message || '';
+        cb(out);
+    };
+    if (release.data && !release.data.error && Date.now() - release.at < 6 * 3600 * 1000) return reply();
+    child.execFile(process.execPath, [DIR + '/update.js', 'check'], { timeout: 30000 }, function (err, out) {
+        try { release = { at: Date.now(), data: JSON.parse(out) }; } catch (e) { release = { at: 0, data: { current: VERSION, error: 'offline' } }; }
+        reply();
+    });
+}
+
+function startUpdate() {
+    fs.writeFileSync(DIR + '/update.json', JSON.stringify({ state: 'updating', message: 'Starting', at: Date.now() }));
+    var log = fs.openSync(DIR + '/update.log', 'a');
+    // its own session: it restarts Home, and peard with it, when it's done
+    child.spawn(process.execPath, [DIR + '/update.js', 'install'], { detached: true, stdio: ['ignore', log, log] }).unref();
+    release.at = 0;
+}
+
 // ---- HTTP ----
 
 var TYPES = { '.jpg': 'image/jpeg', '.png': 'image/png' };
@@ -258,6 +296,7 @@ http.createServer(function (req, res) {
         return icon ? file(res, icon.replace(/^file:\/\//, '')) : send(res, 404, { error: 'not found' });
     }
     if (req.method === 'GET' && url === '/apps') return apps(function (l) { send(res, 200, l); });
+    if (req.method === 'GET' && url === '/update') return update(function (u) { send(res, 200, u); });
     if (req.method === 'GET' && url === '/config') return send(res, 200, config());
     if (req.method === 'GET' && url === '/wallpapers')
         return send(res, 200, readJson(DIR + '/wallpapers/index.json', { count: 0, accents: ['#e9a77f'] }));
@@ -286,6 +325,10 @@ http.createServer(function (req, res) {
         }
         if (url === '/launch' && typeof b.id === 'string')
             return launch(b.id, function (ok) { send(res, 200, { ok: ok }); });
+        if (url === '/update') {
+            if (updateState().state !== 'updating') startUpdate();
+            return send(res, 200, { ok: true });
+        }
         if (url === '/apply') { send(res, 200, { ok: true }); return detached(['on']); }
         if (url === '/lg-home') { send(res, 200, { ok: true }); return detached(['off']); }
         send(res, 404, { error: 'not found' });

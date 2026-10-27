@@ -39,9 +39,26 @@ for f in ["pear"] + [os.path.join("installer", n) for n in sorted(os.listdir(os.
 for f in ("pearwebos", "homeguard", "luna-send-n"):
     r = subprocess.run(["sh", "-n", os.path.join(HERE, "tv", f)], capture_output=True, text=True)
     check(f"tv/{f}", r.returncode == 0, r.stderr.strip())
-for f in ("tv/peard.js", "tv/tvkey.js", "tv/devices.js", "web/home.js", "web/panels.js"):
+for f in ("tv/peard.js", "tv/tvkey.js", "tv/devices.js", "tv/update.js", "web/home.js", "web/panels.js"):
     r = subprocess.run(["node", "--check", os.path.join(HERE, f)], capture_output=True, text=True)
     check(f, r.returncode == 0, r.stderr.strip())
+
+# the TV updating itself (tv/update.js) makes LG Home's edits as the installer
+# does: both, on a stand-in for each LG file holding what the edits look for
+stand_ins = {rel: "Item {\n" + "\n".join(e["old"] for e in edits if "old" in e) + "\n}\n"
+             for rel, edits in patch_home.PATCHES.items()}
+r = subprocess.run(["node", "-e", "var u = require(process.argv[1]), s = JSON.parse(process.argv[2]), o = {};"
+                    "var spec = require(process.argv[3]);"
+                    "Object.keys(s).forEach(function (k) { o[k] = u.patch(spec, k, s[k]); });"
+                    "process.stdout.write(JSON.stringify(o))",
+                    os.path.join(HERE, "tv", "update.js"), json.dumps(stand_ins),
+                    os.path.join(HERE, "installer", "patches.json")], capture_output=True, text=True)
+try:
+    js = json.loads(r.stdout)
+    differ = [rel for rel, text in stand_ins.items() if js.get(rel) != patch_home.patch(rel, text)]
+    check("tv/update.js patches LG Home as the installer does", not differ, ", ".join(differ))
+except ValueError:
+    check("tv/update.js patches LG Home as the installer does", False, r.stderr.strip())
 
 # Pear's own app (app mode, webOS 10): it packs, with its files where the TV looks
 try:

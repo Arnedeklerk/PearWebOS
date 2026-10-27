@@ -18,6 +18,29 @@ var panels = (function () {
 
     function onOff(v) { return v ? 'On' : 'Off'; }
 
+    // a newer Pear, from peard (GET /update): asked when Settings opens, and
+    // followed while one runs (Home restarts when it's done)
+    var upd = null, updTimer = null;
+
+    function canUpdate() { return !!upd && !!upd.available && upd.state !== 'updating'; }
+
+    function updateValue() {
+        if (!upd) return 'Checking...';
+        if (upd.state === 'updating') return upd.message || 'Updating...';
+        if (canUpdate()) return '';
+        if (upd.error) return "Couldn't check";
+        return 'Up to date';
+    }
+
+    function checkUpdate() {
+        api('GET', '/update', null, function (u) {
+            upd = u || { error: 'offline' };
+            clearTimeout(updTimer);
+            if (upd.state === 'updating' && which) updTimer = setTimeout(checkUpdate, 2000);
+            if (which === 'settings' && page === 'main') build();
+        });
+    }
+
     // ---- the rows ----
 
     function inputRows() {
@@ -59,6 +82,10 @@ var panels = (function () {
             { key: 'no_update_prompt', label: "Hide LG's update prompt", value: onOff(c.no_update_prompt !== false),
               note: 'An LG update can remove root, and Pear with it' },
             { header: true, label: 'PearWebOS ' + (c.version || '') },
+            { key: 'update', label: canUpdate() ? 'Update to ' + upd.latest : 'Update Pear', value: updateValue(),
+              note: canUpdate() ? 'Downloads it and restarts Home, in about a minute' :
+                    upd && upd.state === 'failed' ? "Last try didn't work: " + upd.message : '',
+              dim: !canUpdate() },
             { key: 'apply', label: 'Restart Pear', note: 'Re-applies Pear, as setup does.' },
             { key: 'lg', label: confirmLg ? 'Press OK again to switch' : "Use LG's own Home",
               note: 'Pear can be turned back on from a computer: ./pear on' }
@@ -136,6 +163,7 @@ var panels = (function () {
         build();
         first();
         show();
+        if (what === 'settings') checkUpdate();
         if (what === 'inputs') api('GET', '/inputs', null, function (l) {
             inputs = l || [];
             if (which === 'inputs') { build(); first(); show(); }
@@ -229,6 +257,13 @@ var panels = (function () {
         case 'boot_to_home': save({ boot_to_home: c.boot_to_home === false }); break;
         case 'quick_start': save({ quick_start: c.quick_start === false }); break;
         case 'no_update_prompt': save({ no_update_prompt: c.no_update_prompt === false }); break;
+        case 'update':
+            if (!canUpdate()) break;
+            api('POST', '/update', {}, null);
+            upd = { current: upd.current, latest: upd.latest, state: 'updating', message: 'Starting...' };
+            clearTimeout(updTimer);
+            updTimer = setTimeout(checkUpdate, 2000);
+            break;
         case 'apply': api('POST', '/apply', {}, null); close(); return;
         case 'lg':
             if (!confirmLg) { confirmLg = true; break; }

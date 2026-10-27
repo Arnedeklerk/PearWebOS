@@ -21,6 +21,30 @@ EditTile {
 
     function onOff(v) { return v ? "On" : "Off"; }
 
+    // a newer Pear, from peard (GET /update): asked when Settings opens
+    property var upd: null
+    readonly property bool canUpdate: !!upd && !!upd.available && upd.state !== "updating"
+
+    function updateValue() {
+        if (!upd) return "Checking...";
+        if (upd.state === "updating") return upd.message || "Updating...";
+        if (canUpdate) return "";
+        if (upd.error) return "Couldn't check";
+        return "Up to date";
+    }
+
+    function checkUpdate() {
+        home.api("GET", "/update", null, function (u) { settings.upd = u || { error: "offline" }; });
+    }
+
+    // while one runs, follow it (Home restarts when it's done)
+    Timer {
+        interval: 2000
+        repeat: true
+        running: settings.shown && !!settings.upd && settings.upd.state === "updating"
+        onTriggered: settings.checkUpdate()
+    }
+
     readonly property var mainRows: [
         { header: true, label: "Home" },
         { key: "name", label: "Greeting name", value: c.name || "None" },
@@ -50,6 +74,10 @@ EditTile {
         { key: "no_update_prompt", label: "Hide LG's update prompt", value: onOff(c.no_update_prompt !== false),
           note: "An LG update can remove root, and Pear with it" },
         { header: true, label: "PearWebOS " + (c.version || "") },
+        { key: "update", label: canUpdate ? "Update to " + upd.latest : "Update Pear", value: updateValue(),
+          note: canUpdate ? "Downloads it and restarts Home, in about a minute" :
+                upd && upd.state === "failed" ? "Last try didn't work: " + upd.message : "",
+          dim: !canUpdate },
         { key: "apply", label: "Restart Pear", note: "Re-applies Pear, as setup does. Home blinks for a moment." },
         { key: "lg", label: confirmLg ? "Press OK again to switch" : "Use LG's own Home",
           note: "Pear can be turned back on from a computer: ./pear on" }
@@ -99,6 +127,7 @@ EditTile {
     function show() {
         page = "main";
         confirmLg = false;
+        checkUpdate();
         open();
         rowList.forceActiveFocus();
         first(rowList);
@@ -167,6 +196,11 @@ EditTile {
         case "boot_to_home": home.save({ boot_to_home: c.boot_to_home === false }); break;
         case "quick_start": home.save({ quick_start: c.quick_start === false }); break;
         case "no_update_prompt": home.save({ no_update_prompt: c.no_update_prompt === false }); break;
+        case "update":
+            if (!canUpdate) break;
+            home.api("POST", "/update", {}, null);
+            upd = { current: upd.current, latest: upd.latest, state: "updating", message: "Starting..." };
+            break;
         case "apply": home.api("POST", "/apply", {}, null); close(); break;
         case "lg":
             if (!confirmLg) { confirmLg = true; break; }

@@ -4,142 +4,48 @@ LG Home is proprietary, so PearWebOS ships none of it: `pear setup` copies
 the few files below off your TV, this applies small exact edits to them, and
 the results go back to your TV only.
 
-Every edit must match exactly once. A firmware whose Home differs fails here,
-on your computer, and nothing is installed. An edit marked OPTIONAL is for a
-part some firmware lacks (webOS 6.5 has no scroll indicator, say): skipped
-when absent, and still held to exactly one match when present.
+The edits are data, in patches.json, so the TV can make them too when it
+updates itself (tv/update.js). Every edit must match exactly once. A firmware
+whose Home differs fails here, on your computer, and nothing is installed. An
+edit marked optional is for a part some firmware lacks (webOS 6.5 has no
+scroll indicator, say): skipped when absent, and still held to exactly one
+match when present.
 """
+import json
 import os
 import sys
 
-APP = "/usr/palm/applications/com.webos.app.home/qml"
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "patches.json"), encoding="utf-8") as _f:
+    _SPEC = json.load(_f)
 
-OPTIONAL = "optional"
-
-# stands for "just before the file's final closing brace", the end of the
-# root item, which every version has
-END = object()
-
+APP = _SPEC["app"]
 # Pear's own files, each mounted over a file LG Home never loads (and so
 # named after it inside Pear: PearHome uses the backdrop as RecentBG { })
-PEAR_FILES = {
-    "UserInterfaceLayer/Containers/Main/GradationBG.qml": "PearHome.qml",
-    "UserInterfaceLayer/Containers/Main/RecentBG.qml": "PearBackdrop.qml",
-    "UserInterfaceLayer/Containers/Main/EditTile.qml": "PearPanel.qml",
-    "UserInterfaceLayer/Containers/Main/RecentTitle.qml": "PearInputs.qml",
-    "UserInterfaceLayer/Containers/Main/PromotionBG.qml": "PearSettings.qml",
-    "UserInterfaceLayer/Containers/Main/AIBoardIntro.qml": "PearTopBar.qml",
-    "UserInterfaceLayer/Containers/Main/AdLoadingImage.qml": "PearTile.qml",
-}
-
-LOADER = '''    // PearWebOS: an Apple TV style Home over LG's (which stays loaded beneath it)
-    Loader {
-        id: skinHome
-
-        property bool skinActive: status === Loader.Ready && !uiController.isEditMode
-
-        anchors.fill: parent
-        z: 50
-        visible: skinActive
-        focus: skinActive
-        source: "Main/GradationBG.qml"
-
-        // if Pear fails to load, LG's Home shows; say why in a corner
-        onStatusChanged: {
-            if(status === Loader.Error) {
-                var c = Qt.createComponent(source);
-                skinError.text = "PearWebOS: " + c.errorString();
-            }
-        }
-
-        // LG moves focus around after these settle, so take it back a beat later
-        Timer {
-            id: skinRefocus
-            interval: 350
-            onTriggered: if(skinHome.skinActive) skinHome.item.takeFocus()
-        }
-
-        Connections {
-            target: uiController
-            ignoreUnknownSignals: true
-            onHomeShownChanged: {
-                if(uiController.homeShown && skinHome.skinActive) {
-                    if(skinHome.item.drawer) skinHome.item.closeDrawer();
-                    skinHome.item.takeFocus();
-                    skinRefocus.restart();
-                }
-            }
-            onIsEditModeChanged: {
-                if(!uiController.isEditMode) skinRefocus.restart();
-            }
-        }
-    }
-
-    Text {
-        id: skinError
-        z: 200
-        anchors.left: parent.left
-        anchors.bottom: parent.bottom
-        anchors.margins: 8
-        color: "#ff8080"
-        font.pixelSize: 14
-        visible: text !== ""
-    }
-
-'''
-
-PATCHES = {
-    "UserInterfaceLayer/Containers/MainView.qml": [
-        # LG's views stay loaded (and show in Edit Home) so launching,
-        # ordering and editing keep working; Pear draws over them
-        ('''        id: shelfListContainer
-
-        objectName: "shelfListContainer"
-''',
-         '''        id: shelfListContainer
-
-        objectName: "shelfListContainer"
-
-        opacity: skinHome.skinActive ? 0 : 1
-'''),
-        # whatever LG hands focus to lands on its ribbon; send it to Pear instead
-        ('''            onActiveFocusChanged: {
-                if(activeFocus) {
-                    appListLoader.forceActiveFocus();
-                    if(systemProperties.isTopShelfGuide) {''',
-         '''            onActiveFocusChanged: {
-                if(activeFocus) {
-                    if(skinHome.skinActive) skinHome.forceActiveFocus();
-                    else appListLoader.forceActiveFocus();
-                    if(systemProperties.isTopShelfGuide) {'''),
-        ('''        visible: topArea.topShelfLoaded && shelfListContainer.state === "app" && !uiController.isEditMode''',
-         '''        visible: !skinHome.skinActive && topArea.topShelfLoaded && shelfListContainer.state === "app" && !uiController.isEditMode''',
-         OPTIONAL),
-        (END, LOADER),
-    ],
-    "UserInterfaceLayer/UIController.qml": [
-        # power-on opens the full Home and leaves it up, instead of a half
-        # Home that closes itself after 8 seconds (without these, homeguard
-        # reopens it a few seconds later)
-        ('''                } else {
-                    root.isAutoLaunch = true;
-                    root.currentMode = "half";
-                }''',
-         '''                } else {
-                    root.currentMode = "main";
-                }''',
-         OPTIONAL),
-        ('''                if(root.currentMode === "main") return;
-                root.isAutoLaunch = true;
-                root.currentMode = "half";''',
-         '''                if(root.currentMode === "main") return;
-                root.currentMode = "main";''',
-         OPTIONAL),
-    ],
-}
+PEAR_FILES = _SPEC["pear_files"]
+PATCHES = _SPEC["patches"]
 
 # the stock files `pear setup` needs from the TV
 NEEDED = sorted(list(PATCHES) + list(PEAR_FILES))
+
+
+def patch(rel, text):
+    """One stock file with its edits made."""
+    for edit in PATCHES[rel]:
+        if edit.get("end"):
+            cut = text.rstrip().rfind("}")
+            if cut < 0:
+                sys.exit(f"{rel}: no closing brace to insert before. Nothing was installed.")
+            text = text[:cut] + edit["new"] + text[cut:]
+            continue
+        n = text.count(edit["old"])
+        if n == 0 and edit.get("optional"):
+            print(f"  ({rel}: one edit not needed on this firmware)")
+            continue
+        if n != 1:
+            sys.exit(f"{rel}: this firmware's Home differs from the one Pear knows "
+                     f"(expected 1 match, found {n}). Nothing was installed.")
+        text = text.replace(edit["old"], edit["new"])
+    return text
 
 
 def build(stock, out, qml_dir, fill):
@@ -147,25 +53,9 @@ def build(stock, out, qml_dir, fill):
     for slot in PEAR_FILES:
         if not os.path.exists(os.path.join(stock, slot)):
             sys.exit(f"{slot}: not on this TV, so there is nowhere to mount Pear")
-    for rel, edits in PATCHES.items():
+    for rel in PATCHES:
         with open(os.path.join(stock, rel), encoding="utf-8") as f:
-            text = f.read()
-        for old, new, *flags in edits:
-            if old is END:
-                cut = text.rstrip().rfind("}")
-                if cut < 0:
-                    sys.exit(f"{rel}: no closing brace to insert before. Nothing was installed.")
-                text = text[:cut] + new + text[cut:]
-                continue
-            n = text.count(old)
-            if n == 0 and OPTIONAL in flags:
-                print(f"  ({rel}: one edit not needed on this firmware)")
-                continue
-            if n != 1:
-                sys.exit(f"{rel}: this firmware's Home differs from the one Pear knows "
-                         f"(expected 1 match, found {n}). Nothing was installed.")
-            text = text.replace(old, new)
-        write(out, rel, text)
+            write(out, rel, patch(rel, f.read()))
     for slot, name in PEAR_FILES.items():
         with open(os.path.join(qml_dir, name), encoding="utf-8") as f:
             text = f.read()

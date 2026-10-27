@@ -21,7 +21,6 @@ from remote import HOOK, OLD_HOOKS, PEAR, TV_DIR, pull, ssh
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(HERE, ".cache")
-SCRIPTS = ("pearwebos", "homeguard", "luna-send-n", "tvkey.js", "peard.js", "devices.js")
 # what can be changed on the TV itself; the rest (the TV's address, photo
 # quality, where the weather is) only from here
 TV_SETTINGS = ("name", "clock", "date", "entrance", "quiet", "drift", "hidden", "inputs", "weather",
@@ -31,6 +30,13 @@ TV_SETTINGS = ("name", "clock", "date", "entrance", "quiet", "drift", "hidden", 
 def version():
     with open(os.path.join(HERE, "VERSION")) as f:
         return f.read().strip()
+
+
+def newer(a, b):
+    """0.5.10 is newer than 0.5.9."""
+    def parts(v):
+        return [int(x) if x.isdigit() else 0 for x in v.lstrip("v").split(".")]
+    return parts(a) > parts(b)
 
 
 def need_imaging():
@@ -132,12 +138,22 @@ def check_room(conf, size):
                  f"(it needs {KEEP_FREE_MB} MB to run well). Use fewer photos, or light quality. Nothing was sent.")
 
 def push_photos(conf):
+    """Build and send the wallpapers, unless the TV has these already."""
     need_imaging()
     import wallpapers
+    photos, quality = os.path.join(HERE, "photos"), conf.get("wallpaper_quality", "light")
+    src = wallpapers.source(photos, quality)
+    try:
+        on_tv = json.loads(ssh(conf, f"cat {TV_DIR}/wallpapers/index.json 2>/dev/null", check=False))
+    except ValueError:
+        on_tv = {}
+    if on_tv.get("source") == src and on_tv.get("accents"):
+        print("Photos on the TV are current; nothing to send.")
+        return on_tv["accents"]
     with tempfile.TemporaryDirectory() as tmp:
         print("Building wallpapers from photos/ ...")
-        accents = wallpapers.build(os.path.join(HERE, "photos"), tmp, conf.get("wallpaper_quality", "light"))
-        index = json.dumps({"count": len(accents) - 1, "accents": accents}).encode()
+        accents = wallpapers.build(photos, tmp, quality)
+        index = json.dumps({"count": len(accents) - 1, "accents": accents, "source": src}).encode()
         entries = tree(tmp, "wallpapers") + [("wallpapers/index.json", index, 0o644)]
     check_room(conf, sum(len(e[1]) for e in entries))
     ssh(conf, f"mkdir -p {TV_DIR} && cd {TV_DIR} && rm -rf wallpapers && tar xf -", stdin=tar_of(entries))
@@ -155,7 +171,7 @@ def code_hash(mode):
                 continue
             with open(os.path.join(HERE, d, f), "rb") as fh:
                 h.update(f.encode() + fh.read())
-    for f in ("installer/patch_home.py", "VERSION"):
+    for f in ("installer/patch_home.py", "installer/patches.json", "VERSION"):
         with open(os.path.join(HERE, f), "rb") as fh:
             h.update(fh.read())
     return h.hexdigest()[:16]
@@ -194,12 +210,18 @@ def push_code(conf, accents, force=False):
     want = code_hash(mode)
     have = ssh(conf, f"cat {TV_DIR}/code.sha 2>/dev/null; [ -f {app.APP_DIR}/appinfo.json ] || echo no-app",
                check=False).split()
-    if not force and have[:1] == [want] and not (mode == "app" and "no-app" in have):
+    on_tv = ssh(conf, f"cat {TV_DIR}/VERSION 2>/dev/null", check=False).strip()
+    if on_tv and newer(on_tv, version()):
+        # it updated itself (Settings > Update): this copy would take it back
+        sys.exit(f"The TV has Pear {on_tv}, newer than this copy ({version()}). Run {PEAR} update instead.")
+    # a release the TV installed itself counts as this same release
+    current = have[:1] in ([want], [f"release-{version()}"])
+    if not force and current and not (mode == "app" and "no-app" in have):
         print("Pear's code on the TV is current; Home picks up settings and photos within a minute.")
         return False
 
     entries = patched_home(conf, accents) if mode == "qml" else [("mode", b"app\n", 0o644)]
-    for script in SCRIPTS:
+    for script in sorted(os.listdir(os.path.join(HERE, "tv"))):
         # LF only, whatever the checkout did: "#!/bin/sh\r" is "not found"
         with open(os.path.join(HERE, "tv", script), "rb") as f:
             entries.append((script, f.read().replace(b"\r\n", b"\n"), 0o755))
