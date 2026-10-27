@@ -240,9 +240,6 @@ function install(tag) {
                 if (/^tv\/[^/]+$/.test(p)) put(STAGE + '/' + p.slice(3), src[p], 0x1ed);
                 else if (/^icons\/[^/]+\.png$/.test(p)) put(STAGE + '/' + p, src[p]);
             });
-            put(STAGE + '/VERSION', ver + '\n');
-            // what a computer's `pear sync` of this same release takes as current
-            put(STAGE + '/code.sha', 'release-' + ver + '\n');
             if (mode === 'app') put('/tmp/pearwebos.ipk', ipk(src, ver));
             else qmlFiles(src, STAGE);
 
@@ -256,10 +253,17 @@ function install(tag) {
                 fs.unlinkSync('/tmp/pearwebos.ipk');
                 if (!/installed/.test(out)) throw new Error("the app didn't install");
             }
+            // last, so a failed update isn't taken for this version: and what
+            // a computer's `pear sync` of this same release takes as current
+            fs.writeFileSync(DIR + '/VERSION', ver + '\n');
+            fs.writeFileSync(DIR + '/code.sha', 'release-' + ver + '\n');
             state('done', 'Updated to ' + ver);
         } catch (e) {
             child.spawnSync('rm', ['-rf', STAGE]);
-            return state('failed', e.message);
+            console.error(e.stack || e.message);
+            // one line for Settings; the whole of it is in update.log
+            var line = String(e.message).split('\n')[0];
+            return state('failed', /^Command failed/.test(line) ? "A step didn't work (update.log has it)" : line.slice(0, 120));
         }
         // Home restarts with the new Pear (peard with it)
         child.spawn(DIR + '/pearwebos', ['on'], { detached: true, stdio: 'ignore' }).unref();
