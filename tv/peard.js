@@ -16,7 +16,8 @@
 //                             what's plugged in where it says (devices.js)
 //   POST /launch {id}         open an app, input or launch point
 //   GET  /update              {current, latest, available, state, message}:
-//                             a new release, checked every 6 hours, and how
+//                             a new release (asked again after 10 minutes,
+//                             or 6 hours once one is found), and how
 //                             an update in progress is going (update.js)
 //   POST /update              get the latest release and install it
 //   POST /apply               restart Home with Pear (picks up new QML)
@@ -223,7 +224,10 @@ function update(cb) {
         out.message = s.message || '';
         cb(out);
     };
-    if (release.data && !release.data.error && Date.now() - release.at < 6 * 3600 * 1000) return reply();
+    // a release found stays found; "up to date" is asked again soon, so one
+    // published a minute later shows the next time Settings opens
+    var keep = release.data && release.data.available ? 6 * 3600 * 1000 : 10 * 60 * 1000;
+    if (release.data && !release.data.error && Date.now() - release.at < keep) return reply();
     child.execFile(process.execPath, [DIR + '/update.js', 'check'], { timeout: 30000 }, function (err, out) {
         try { release = { at: Date.now(), data: JSON.parse(out) }; } catch (e) { release = { at: 0, data: { current: VERSION, error: 'offline' } }; }
         reply();
