@@ -46,8 +46,11 @@ function state(s, message) {
 
 // ---- fetching ----
 
+// (Node 8 takes one options object, not a URL and options)
 function get(url, cb, hops) {
-    https.get(url, { headers: { 'User-Agent': 'PearWebOS', Accept: 'application/vnd.github+json' } }, function (res) {
+    var o = require('url').parse(url);
+    o.headers = { 'User-Agent': 'PearWebOS', Accept: 'application/vnd.github+json' };
+    https.get(o, function (res) {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && (hops || 0) < 5) {
             res.resume();
             return get(res.headers.location, cb, (hops || 0) + 1);
