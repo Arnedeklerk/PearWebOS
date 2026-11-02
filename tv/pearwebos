@@ -203,19 +203,20 @@ front_app() {
 }
 
 # Restarting Home shows it. With "Power on to Home" off the TV should stay on
-# what it powered on to, so that is opened again over Home (within a few
-# seconds of boot, so a Home pressed for later stays)
+# what it powered on to, so that app ($1, noted before Home restarted: once
+# Home is up it may no longer count as in front) is opened again over Home.
+# With none noted, wait up to 40 s for one to appear (a Home pressed after
+# that stays)
 keep_front() {
+    a=$1
     i=0
-    while [ $i -lt 10 ]; do
-        a=$(front_app)
-        if [ -n "$a" ]; then
-            $LS -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"$a\"}" >/dev/null
-            log "boot: back to $a (power on to Home is off)"
-            return 0
-        fi
+    while [ -z "$a" ] && [ $i -lt 80 ]; do
         usleep 500000; i=$((i + 1))
+        a=$(front_app)
     done
+    [ -n "$a" ] || { log "boot: no app to go back to"; return 0; }
+    $LS -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"$a\"}" >/dev/null
+    log "boot: back to $a (power on to Home is off)"
 }
 
 go_stock() {
@@ -252,17 +253,22 @@ cmd_off() {
 
 # the settings a TV needs to power on straight into Home
 boot_settings() {
-    # off sets them back too: power-on then shows the last input, not Home
+    # off stops Home auto-launching, and leaves the TV's own power-on screen
+    # alone (it was forced to Live TV here before, at every boot, which undid
+    # choosing the last input in the TV's settings)
     if [ "$BOOT_TO_HOME" = 1 ]; then
         $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv","welcomeFeature":"off","noSignalScreenSaver":"off","homeAutoLaunch":"on","homeAutoLaunchMode":"full"}}' >/dev/null
     else
-        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv","homeAutoLaunch":"off"}}' >/dev/null
+        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"homeAutoLaunch":"off"}}' >/dev/null
     fi
     # Quick Start+: power-off sleeps, so power-on resumes Pear instead of
     # booting LG's stock Home
-    [ "$QUICK_START" = 1 ] &&
+    if [ "$QUICK_START" = 1 ]; then
         $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"option","settings":{"quickStartMode":"on"}}' >/dev/null
-    # no "new software, update now?" at power-on: an update can remove root
+    else
+        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"option","settings":{"quickStartMode":"off"}}' >/dev/null
+    fi
+       # no "new software, update now?" at power-on: an update can remove root
     [ "$NO_UPDATE_PROMPT" = 1 ] &&
         $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"support","settings":{"automaticUpdate":"off","softwareUpdateEnable":"false"}}' >/dev/null
     return 0
@@ -275,9 +281,13 @@ cmd_boot() {
     # a boot always brings LG's stock Home: rebuild it with Pear at once, so
     # the stock one is on screen as briefly as possible
     log "boot: rebuilding Home with Pear ($(pear_id))"
+    # what the TV powered on to, noted now: restarting Home covers it
+    boot_app=
+    [ "$BOOT_TO_HOME" = 1 ] || boot_app=$(front_app)
     # the files are mounted above; Pear is on screen once cold_start returns
     cold_start && guard start
-    [ "$BOOT_TO_HOME" = 1 ] || keep_front
+    # in the background: it can wait a while, and boot has more to do
+    [ "$BOOT_TO_HOME" = 1 ] || setsid "$0" keepfront "$boot_app" </dev/null >/dev/null 2>&1 &
     # bookkeeping, after Pear is already showing
     if wait_snapshot; then
         pear_id > "$STAMP"
@@ -321,6 +331,7 @@ case "${1:-status}" in
     install-app) install_app "$2" ;;
     remove-app) remove_app ;;
     settings) boot_settings ;;
+    keepfront) keep_front "$2" ;;
     unmount) umount_all ;;
     *) echo "usage: pearwebos on|off|boot|status|settings|unmount|install-app <ipk>|remove-app" >&2; exit 2 ;;
 esac
