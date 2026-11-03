@@ -202,24 +202,19 @@ front_app() {
         grep -o '"appId": *"[^"]*"' | sed 's/"appId": *"//; s/"$//' | grep -v -e '^$' -e '^com.webos.app.home$' | head -1
 }
 
-# the app the TV powers on to, by its own setting (Live TV, if it says so)
-power_on_app() {
-    $LS -n 1 luna://com.webos.settingsservice/getSystemSettings '{"category":"general","keys":["powerOnScreen"]}' |
-        grep -q '"powerOnScreen": *"liveTv"' && echo com.webos.app.livetv
-}
-
 # Restarting Home shows it. With "Power on to Home" off the TV should stay on
-# what it powered on to, so that is opened again over Home: what was in front
-# before the restart ($1), else what the TV powers on to, else whatever comes
-# to the front in the next few seconds
+# what it came up on, so that is opened again over Home: what was in front
+# before the restart ($1), else the first app to come to the front within
+# 40 s (an HDMI input a console switches to over CEC, say; a Home pressed
+# after that stays). Run in the background: it can wait a while.
 keep_front() {
-    a=${1:-$(power_on_app)}
+    a=$1
     i=0
-    while [ -z "$a" ] && [ $i -lt 10 ]; do
+    while [ -z "$a" ] && [ $i -lt 80 ]; do
         usleep 500000; i=$((i + 1))
         a=$(front_app)
     done
-    [ -n "$a" ] || { log "boot: nothing to go back to over Home"; return 0; }
+    [ -n "$a" ] || { log "boot: no app to go back to over Home"; return 0; }
     $LS -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"$a\"}" >/dev/null
     log "boot: back to $a (power on to Home is off)"
 }
@@ -258,14 +253,13 @@ cmd_off() {
 
 # the settings a TV needs to power on straight into Home
 boot_settings() {
-    # off sets them back too: power-on then shows the last input, not Home
+    # off stops LG opening Home at power-on, and leaves the TV's own power-on
+    # screen as you set it (Live TV, or the last input)
     if [ "$BOOT_TO_HOME" = 1 ]; then
         r=$($LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv","welcomeFeature":"off","noSignalScreenSaver":"off","homeAutoLaunch":"on","homeAutoLaunchMode":"full"}}')
         want=on
     else
-        # on its own, so nothing else in the request can get it refused
         r=$($LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"homeAutoLaunch":"off"}}')
-        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv"}}' >/dev/null
         want=off
     fi
     # LG opening Home at power-on is what this is all about: say if it didn't take
@@ -274,8 +268,8 @@ boot_settings() {
     [ "$now" = "$want" ] || log "settings: asked LG for homeAutoLaunch $want, it says ${now:-nothing} (${r:-no reply})"
     # Quick Start+: power-off sleeps, so power-on resumes Pear instead of
     # booting LG's stock Home
-    [ "$QUICK_START" = 1 ] &&
-        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"option","settings":{"quickStartMode":"on"}}' >/dev/null
+    if [ "$QUICK_START" = 1 ]; then q=on; else q=off; fi
+    $LS -n 1 luna://com.webos.settingsservice/setSystemSettings "{\"category\":\"option\",\"settings\":{\"quickStartMode\":\"$q\"}}" >/dev/null
     # no "new software, update now?" at power-on: an update can remove root
     [ "$NO_UPDATE_PROMPT" = 1 ] &&
         $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"support","settings":{"automaticUpdate":"off","softwareUpdateEnable":"false"}}' >/dev/null
@@ -293,7 +287,7 @@ cmd_boot() {
     before=$(front_app)
     # the files are mounted above; Pear is on screen once cold_start returns
     cold_start && guard start
-    [ "$BOOT_TO_HOME" = 1 ] || keep_front "$before"
+    [ "$BOOT_TO_HOME" = 1 ] || setsid "$0" keepfront "$before" </dev/null >/dev/null 2>&1 &
     # bookkeeping, after Pear is already showing
     if wait_snapshot; then
         pear_id > "$STAMP"
@@ -337,6 +331,7 @@ case "${1:-status}" in
     install-app) install_app "$2" ;;
     remove-app) remove_app ;;
     settings) boot_settings ;;
+    keepfront) keep_front "$2" ;;
     unmount) umount_all ;;
-    *) echo "usage: pearwebos on|off|boot|status|settings|unmount|install-app <ipk>|remove-app" >&2; exit 2 ;;
+    *) echo "usage: pearwebos on|off|boot|status|settings|unmount|install-app <ipk>|remove-app|keepfront [app]" >&2; exit 2 ;;
 esac
