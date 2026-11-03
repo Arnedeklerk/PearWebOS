@@ -202,20 +202,26 @@ front_app() {
         grep -o '"appId": *"[^"]*"' | sed 's/"appId": *"//; s/"$//' | grep -v -e '^$' -e '^com.webos.app.home$' | head -1
 }
 
+# the app the TV powers on to, by its own setting (Live TV, if it says so)
+power_on_app() {
+    $LS -n 1 luna://com.webos.settingsservice/getSystemSettings '{"category":"general","keys":["powerOnScreen"]}' |
+        grep -q '"powerOnScreen": *"liveTv"' && echo com.webos.app.livetv
+}
+
 # Restarting Home shows it. With "Power on to Home" off the TV should stay on
-# what it powered on to, so that is opened again over Home (within a few
-# seconds of boot, so a Home pressed for later stays)
+# what it powered on to, so that is opened again over Home: what was in front
+# before the restart ($1), else what the TV powers on to, else whatever comes
+# to the front in the next few seconds
 keep_front() {
+    a=${1:-$(power_on_app)}
     i=0
-    while [ $i -lt 10 ]; do
-        a=$(front_app)
-        if [ -n "$a" ]; then
-            $LS -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"$a\"}" >/dev/null
-            log "boot: back to $a (power on to Home is off)"
-            return 0
-        fi
+    while [ -z "$a" ] && [ $i -lt 10 ]; do
         usleep 500000; i=$((i + 1))
+        a=$(front_app)
     done
+    [ -n "$a" ] || { log "boot: nothing to go back to over Home"; return 0; }
+    $LS -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"$a\"}" >/dev/null
+    log "boot: back to $a (power on to Home is off)"
 }
 
 go_stock() {
@@ -254,10 +260,18 @@ cmd_off() {
 boot_settings() {
     # off sets them back too: power-on then shows the last input, not Home
     if [ "$BOOT_TO_HOME" = 1 ]; then
-        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv","welcomeFeature":"off","noSignalScreenSaver":"off","homeAutoLaunch":"on","homeAutoLaunchMode":"full"}}' >/dev/null
+        r=$($LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv","welcomeFeature":"off","noSignalScreenSaver":"off","homeAutoLaunch":"on","homeAutoLaunchMode":"full"}}')
+        want=on
     else
-        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv","homeAutoLaunch":"off"}}' >/dev/null
+        # on its own, so nothing else in the request can get it refused
+        r=$($LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"homeAutoLaunch":"off"}}')
+        $LS -n 1 luna://com.webos.settingsservice/setSystemSettings '{"category":"general","settings":{"powerOnScreen":"liveTv"}}' >/dev/null
+        want=off
     fi
+    # LG opening Home at power-on is what this is all about: say if it didn't take
+    now=$($LS -n 1 luna://com.webos.settingsservice/getSystemSettings '{"category":"general","keys":["homeAutoLaunch"]}' |
+          grep -o '"homeAutoLaunch": *"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+    [ "$now" = "$want" ] || log "settings: asked LG for homeAutoLaunch $want, it says ${now:-nothing} (${r:-no reply})"
     # Quick Start+: power-off sleeps, so power-on resumes Pear instead of
     # booting LG's stock Home
     [ "$QUICK_START" = 1 ] &&
@@ -275,9 +289,11 @@ cmd_boot() {
     # a boot always brings LG's stock Home: rebuild it with Pear at once, so
     # the stock one is on screen as briefly as possible
     log "boot: rebuilding Home with Pear ($(pear_id))"
+    # what the TV is showing, to go back to after (Home itself doesn't count)
+    before=$(front_app)
     # the files are mounted above; Pear is on screen once cold_start returns
     cold_start && guard start
-    [ "$BOOT_TO_HOME" = 1 ] || keep_front
+    [ "$BOOT_TO_HOME" = 1 ] || keep_front "$before"
     # bookkeeping, after Pear is already showing
     if wait_snapshot; then
         pear_id > "$STAMP"
